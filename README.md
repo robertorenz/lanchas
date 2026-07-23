@@ -53,6 +53,7 @@ is remembered):
 | **Gran Travesía** | A vast delta ~10× the size of the others — the camera scrolls with your boat, a minimap shows the field, 2 laps |
 | **Ocho Loco** | A giant figure-8 whose channels criss-cross mid-bay — real cross traffic at the junction, 2 laps |
 | **Archipiélago** | A long, bright island-hopping coastal cruise, 2 laps |
+| **El Nudo** | A jungle river tied in a trefoil knot — three criss-cross junctions and two wooden bridges you race under, 2 laps |
 
 ## Boosters
 

@@ -174,6 +174,30 @@ const TRACKS = [
             { t: .81, off: 24, r: 12 }, { t: .91, off: -25, r: 13 }],
     crates: [],
     whirls: [{ t: .41, off: 0, r: 36 }, { t: .71, off: -6, r: 36 }]
+  },
+  {
+    // control points sample a trefoil knot: x = sin t + 2 sin 2t, y = cos t - 2 cos 2t
+    id: 'nudo', name: 'El Nudo', blurb: 'A jungle river tied in a knot — three crossings, two bridges.',
+    half: 40, startNear: [170, 1470], decor: 'palms',
+    w: 3000, h: 2000, samples: 2400, laps: 2,
+    ctrl: [[1500, 826], [2330, 961], [2833, 1295], [2825, 1651], [2351, 1834],
+           [1654, 1719], [1058, 1321], [823, 789], [1019, 340], [1500, 166],
+           [1981, 340], [2177, 789], [1942, 1321], [1346, 1719], [649, 1834],
+           [175, 1651], [167, 1295], [670, 961]],
+    palette: {
+      land: '#9FAE6E', shore: '#7E8F52',
+      water: ['#0F4A60', '#186E8A', '#237F9D'],
+      mottle: ['rgba(94,120,60,.45)', 'rgba(146,158,96,.5)'], tree: '#35663F'
+    },
+    buoys: [{ t: .05, off: 18 }, { t: .16, off: -18 }, { t: .27, off: 18 },
+            { t: .38, off: -18 }, { t: .49, off: 18 }, { t: .6, off: -18 },
+            { t: .71, off: 18 }, { t: .82, off: -18 }, { t: .93, off: 18 }],
+    rocks: [{ t: .09, off: 23, r: 12 }, { t: .31, off: -22, r: 11 },
+            { t: .45, off: 23, r: 13 }, { t: .64, off: -23, r: 11 },
+            { t: .78, off: 22, r: 12 }, { t: .97, off: -23, r: 11 }],
+    crates: [],
+    whirls: [{ t: .21, off: 0, r: 34 }, { t: .68, off: 0, r: 34 }],
+    bridges: [{ t: .12 }, { t: .55 }]
   }
 ];
 
@@ -217,7 +241,11 @@ function buildTrack(def) {
     buoys: def.buoys.map((b, i) => ({ ...at(b.t, b.off), r: 7, phase: i * 1.7 })),
     rocks: def.rocks.map(r => ({ ...at(r.t, r.off), r: r.r })),
     crates: def.crates.map((c, i) => ({ ...at(c.t, c.off), r: c.r, rot: i * 0.9 })),
-    whirls: def.whirls.map(w => ({ ...at(w.t, w.off), r: w.r }))
+    whirls: def.whirls.map(w => ({ ...at(w.t, w.off), r: w.r })),
+    bridges: (def.bridges || []).map(b => {
+      const p = pts[(startIdx + Math.round(b.t * NN)) % NN];
+      return { x: p.x, y: p.y, ang: Math.atan2(p.ty, p.tx) };
+    })
   };
 }
 
@@ -894,6 +922,26 @@ function drawBoat(b) {
   ctx.fillStyle = '#22303A';
   ctx.fillRect(-15, -2.5, 4, 5);
   ctx.restore();
+}
+
+// wooden footbridges span the channel; drawn after the boats so they pass under
+function drawBridges() {
+  for (const br of T.bridges) {
+    const L2 = T.half + 16;
+    ctx.save();
+    ctx.translate(br.x, br.y);
+    ctx.rotate(br.ang);
+    ctx.fillStyle = 'rgba(9,32,46,.28)';
+    ctx.fillRect(-19, -L2, 40, L2 * 2);
+    ctx.fillStyle = '#8A6B48';
+    ctx.fillRect(-15, -L2, 30, L2 * 2);
+    ctx.fillStyle = '#A07E56';
+    for (let y = -L2 + 4; y < L2 - 6; y += 9) ctx.fillRect(-13, y, 26, 5);
+    ctx.fillStyle = '#5E4530';
+    ctx.fillRect(-18, -L2, 4, L2 * 2);
+    ctx.fillRect(14, -L2, 4, L2 * 2);
+    ctx.restore();
+  }
 }
 
 function drawParts() {
@@ -1633,6 +1681,7 @@ function frame(now) {
   drawParts();
   drawBuoys();
   if (state !== 'menu' && boats.length) for (const b of [...boats].reverse()) drawBoat(b);
+  drawBridges();
   ctx.setTransform(RES, 0, 0, RES, 0, 0);
   drawMinimap();
   drawBoostHud();
