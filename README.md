@@ -51,6 +51,16 @@ is remembered):
 | **Río Bravo** | Narrow canyon river strewn with rocks |
 | **Puerto Viejo** | Tight concrete harbor with chicanes and floating cargo |
 | **Gran Travesía** | A vast delta ~10× the size of the others — the camera scrolls with your boat, a minimap shows the field, 2 laps |
+| **Ocho Loco** | A giant figure-8 whose channels criss-cross mid-bay — real cross traffic at the junction, 2 laps |
+| **Archipiélago** | A long, bright island-hopping coastal cruise, 2 laps |
+
+## Boosters
+
+Four ⚡ lightning bolts float on every track. Drive over one to grab it, then
+press **Space** to fire it: double thrust for 4 seconds with a golden wake.
+A taken bolt respawns 5 seconds later somewhere random on the circuit. AI
+boats grab and use them too, and in multiplayer they are host-authoritative
+(guests predict their own activation so Space feels instant).
 
 ## Features
 

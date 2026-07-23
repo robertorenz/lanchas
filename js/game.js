@@ -131,6 +131,49 @@ const TRACKS = [
             { t: .81, off: 26, r: 12 }, { t: .97, off: -24, r: 11 }],
     crates: [],
     whirls: [{ t: .25, off: 0, r: 40 }, { t: .55, off: -6, r: 40 }, { t: .88, off: 4, r: 36 }]
+  },
+  {
+    id: 'ocho', name: 'Ocho Loco', blurb: 'A giant figure-8 — the channels criss-cross mid-bay. Watch for cross traffic!',
+    half: 44, startNear: [700, 1400], decor: 'palms',
+    w: 2600, h: 1800, samples: 1800, laps: 2,
+    ctrl: [[1050, 1160], [700, 1400], [300, 1250], [180, 850], [350, 480],
+           [750, 350], [1080, 640], [1550, 1180], [1900, 1430], [2320, 1250],
+           [2440, 850], [2260, 470], [1830, 350], [1520, 640]],
+    palette: {
+      land: '#B7A97E', shore: '#96865C',
+      water: ['#114C63', '#1A7189', '#26839C'],
+      mottle: ['rgba(130,142,88,.42)', 'rgba(163,146,102,.5)'], tree: '#4A7550'
+    },
+    buoys: [{ t: .08, off: 20 }, { t: .2, off: -20 }, { t: .32, off: 20 },
+            { t: .44, off: -20 }, { t: .58, off: 20 }, { t: .7, off: -20 },
+            { t: .82, off: 20 }, { t: .94, off: -20 }],
+    rocks: [{ t: .14, off: 26, r: 12 }, { t: .38, off: -25, r: 11 },
+            { t: .64, off: 26, r: 13 }, { t: .88, off: -25, r: 12 }],
+    crates: [],
+    whirls: [{ t: .26, off: 0, r: 38 }, { t: .76, off: 0, r: 38 }]
+  },
+  {
+    id: 'archipielago', name: 'Archipiélago', blurb: 'A long island-hopping coastal cruise. Big, bright, and busy.',
+    half: 42, startNear: [800, 1750], decor: 'palms',
+    w: 2800, h: 1900, samples: 2000, laps: 2,
+    ctrl: [[350, 1650], [800, 1750], [1300, 1600], [1700, 1730], [2200, 1650],
+           [2550, 1400], [2400, 1100], [2600, 800], [2450, 450], [2000, 300],
+           [1600, 450], [1250, 280], [850, 380], [500, 250], [200, 500],
+           [300, 850], [150, 1200], [280, 1450]],
+    palette: {
+      land: '#E0D4A2', shore: '#C4B078',
+      water: ['#0E6B84', '#1C93A9', '#2AA6BB'],
+      mottle: ['rgba(148,168,104,.42)', 'rgba(196,176,120,.5)'], tree: '#3F7C4E'
+    },
+    buoys: [{ t: .06, off: 20 }, { t: .16, off: -20 }, { t: .26, off: 20 },
+            { t: .36, off: -20 }, { t: .46, off: 20 }, { t: .56, off: -20 },
+            { t: .66, off: 20 }, { t: .76, off: -20 }, { t: .86, off: 20 },
+            { t: .96, off: -20 }],
+    rocks: [{ t: .11, off: 25, r: 12 }, { t: .31, off: -24, r: 11 },
+            { t: .51, off: 25, r: 13 }, { t: .61, off: -25, r: 11 },
+            { t: .81, off: 24, r: 12 }, { t: .91, off: -25, r: 13 }],
+    crates: [],
+    whirls: [{ t: .41, off: 0, r: 36 }, { t: .71, off: -6, r: 36 }]
   }
 ];
 
@@ -196,7 +239,7 @@ function nearestIdx(x, y, hint) {
       if (d < bd) { bd = d; best = i; }
     }
     // hint too stale (e.g. teleport correction): fall back to a full scan
-    if (bd > (T.half + 80) ** 2) return nearestIdx(x, y, null);
+    if (bd > (T.half + 20) ** 2) return nearestIdx(x, y, null);
   }
   return best;
 }
@@ -253,6 +296,21 @@ const snd = {
     [523, 659, 784, 1047].forEach((f, i) =>
       setTimeout(() => this.beep(f, .22, .25), i * 140));
   },
+  ding() {
+    this.beep(1180, .07, .22);
+    setTimeout(() => this.beep(1570, .1, .22), 70);
+  },
+  zap() {
+    if (!this.ctx) return;
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(180, this.ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(880, this.ctx.currentTime + .3);
+    g.gain.setValueAtTime(.25, this.ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001, this.ctx.currentTime + .4);
+    o.connect(g).connect(this.master);
+    o.start(); o.stop(this.ctx.currentTime + .4);
+  },
   toggleMute() {
     this.muted = !this.muted;
     if (this.master) this.master.gain.value = this.muted ? 0 : 0.5;
@@ -292,10 +350,11 @@ function spawnBoats() {
       name: r.name, ai: !!r.ai, remote: !!r.remote,
       skill: r.skill ?? AI_SKILL[i],
       color: SLOT_STYLE[i].color, trim: SLOT_STYLE[i].trim,
-      netIn: { th: 0, st: 0 },
+      netIn: { th: 0, st: 0, sp: 0 },
       x: p.x + p.nx * lane, y: p.y + p.ny * lane,
       a: Math.atan2(p.ty, p.tx),
       vx: 0, vy: 0, steer: 0, throttle: 0,
+      boostHeld: false, boostT: 0, boostUseAt: 0, boostLockT: 0,
       idx, prevIdx: idx, prog: -12 - row * 11,
       lapsDone: 0, lapStamp: 0, bestLap: null,
       finished: false, finishTime: null,
@@ -325,8 +384,11 @@ function stepBoat(b, dt) {
   const spd = Math.hypot(b.vx, b.vy);
   b.a = wrapAng(b.a + TURN * b.steer * clamp(spd / 90, 0, 1) * dt);
 
+  b.boostT = Math.max(0, b.boostT - dt);
+  b.boostLockT = Math.max(0, b.boostLockT - dt);
   const th = b.throttle;
-  if (th > 0) { b.vx += Math.cos(b.a) * ACCEL * th * dt; b.vy += Math.sin(b.a) * ACCEL * th * dt; }
+  const acc = ACCEL * (b.boostT > 0 ? 2 : 1);   // boost doubles thrust => ~2x top speed
+  if (th > 0) { b.vx += Math.cos(b.a) * acc * th * dt; b.vy += Math.sin(b.a) * acc * th * dt; }
   else if (th < 0) { b.vx += Math.cos(b.a) * REV_ACCEL * th * dt; b.vy += Math.sin(b.a) * REV_ACCEL * th * dt; }
 
   // anisotropic water drag -> drift feel
@@ -429,6 +491,15 @@ function wake(b) {
     life: 0, max: .8 + Math.random() * .5,
     r: 2 + Math.random() * 2, wake: true
   });
+  if (b.boostT > 0) {   // golden exhaust while boosting
+    parts.push({
+      x: sx, y: sy,
+      vx: -Math.cos(b.a) * 60 + (Math.random() - .5) * 30,
+      vy: -Math.sin(b.a) * 60 + (Math.random() - .5) * 30,
+      life: 0, max: .3 + Math.random() * .25,
+      r: 2 + Math.random() * 2.5, wake: false, gold: true
+    });
+  }
 }
 function stepParts(dt) {
   for (let i = parts.length - 1; i >= 0; i--) {
@@ -437,6 +508,101 @@ function stepParts(dt) {
     if (p.life >= p.max) { parts.splice(i, 1); continue; }
     p.x += p.vx * dt; p.y += p.vy * dt;
     p.vx *= .96; p.vy *= .96;
+  }
+}
+
+// ---------------------------------------------------------------- boosters
+// Lightning bolts float on the track. Drive over one to hold it, press
+// Space for 2x thrust for 4s. Taken bolts respawn 5s later somewhere random.
+const BOLT_R = 11, BOOST_TIME = 4, BOLT_RESPAWN = 5;
+let bolts = [];
+
+function boltPos(t, off) {
+  const p = T.pts[(T.startIdx + Math.round(t * T.N) + T.N) % T.N];
+  return { x: p.x + p.nx * off, y: p.y + p.ny * off };
+}
+
+function spawnBolts() {
+  bolts = [.12, .37, .62, .87].map((t, i) => ({
+    ...boltPos(t, (i % 2 ? -1 : 1) * 10),
+    active: true, respawnT: 0, phase: i * 1.3
+  }));
+}
+
+function updateBolts(dt) {   // host / solo only
+  for (const o of bolts) {
+    if (!o.active && raceTime >= o.respawnT) {
+      const spot = boltPos(Math.random(), (Math.random() * 2 - 1) * (T.half - 22));
+      o.x = spot.x; o.y = spot.y;
+      o.active = true;
+    }
+    if (!o.active) continue;
+    for (const b of boats) {
+      if (b.boostHeld || b.finished) continue;
+      if (dist2(b.x, b.y, o.x, o.y) < (BOLT_R + HULL_R) ** 2) {
+        o.active = false;
+        o.respawnT = raceTime + BOLT_RESPAWN;
+        b.boostHeld = true;
+        b.boostUseAt = raceTime + 0.6 + Math.random() * 1.2;   // AI usage delay
+        if (b === boats[ME]) snd.ding();
+        break;
+      }
+    }
+  }
+}
+
+function activateBoost(b) {
+  if (!b.boostHeld || b.boostT > 0) return;
+  b.boostHeld = false;
+  b.boostT = BOOST_TIME;
+  spray(b.x, b.y, 6);
+  if (b === boats[ME]) snd.zap();
+}
+
+function drawBolts() {
+  for (const o of bolts) {
+    if (!o.active) continue;
+    const bob = Math.sin(perf * 2.4 + o.phase) * 2;
+    const pulse = 1 + Math.sin(perf * 4 + o.phase) * 0.08;
+    ctx.save();
+    ctx.translate(o.x, o.y + bob);
+    ctx.scale(pulse, pulse);
+    ctx.fillStyle = 'rgba(245,184,65,.25)';
+    ctx.beginPath(); ctx.arc(0, 0, BOLT_R + 6, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#EDF4F7';
+    ctx.beginPath(); ctx.arc(0, 0, BOLT_R, 0, TAU); ctx.fill();
+    ctx.strokeStyle = 'rgba(9,32,46,.35)'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = '#F5B841';
+    ctx.strokeStyle = '#B9822A'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(2.5, -7.5); ctx.lineTo(-4, 1.5); ctx.lineTo(-0.5, 1.5);
+    ctx.lineTo(-2.5, 7.5); ctx.lineTo(4, -1.5); ctx.lineTo(0.5, -1.5);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawBoostHud() {
+  if (state !== 'racing' && state !== 'finished') return;
+  const me = boats[ME];
+  if (!me) return;
+  if (me.boostT > 0) {
+    const w = 130, x = W / 2 - w / 2, y = H - 26;
+    ctx.fillStyle = 'rgba(8,20,30,.6)';
+    ctx.fillRect(x - 4, y - 4, w + 8, 16);
+    ctx.fillStyle = '#F5B841';
+    ctx.fillRect(x, y, w * (me.boostT / BOOST_TIME), 8);
+  } else if (me.boostHeld) {
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '600 17px Bahnschrift, "Arial Narrow", sans-serif';
+    const pulse = .75 + Math.sin(perf * 5) * .25;
+    ctx.fillStyle = 'rgba(8,20,30,.65)';
+    ctx.fillRect(W / 2 - 92, H - 38, 184, 26);
+    ctx.fillStyle = `rgba(245,184,65,${pulse.toFixed(2)})`;
+    ctx.fillText('⚡ SPACE — BOOST', W / 2, H - 25);
+    ctx.restore();
   }
 }
 
@@ -736,6 +902,9 @@ function drawParts() {
     if (p.wake) {
       ctx.fillStyle = `rgba(230,244,250,${(.5 * k).toFixed(3)})`;
       ctx.beginPath(); ctx.arc(p.x, p.y, p.r + (1 - k) * 6, 0, TAU); ctx.fill();
+    } else if (p.gold) {
+      ctx.fillStyle = `rgba(245,184,65,${(.85 * k).toFixed(3)})`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, TAU); ctx.fill();
     } else {
       ctx.fillStyle = `rgba(237,244,247,${(.9 * k).toFixed(3)})`;
       ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, TAU); ctx.fill();
@@ -782,6 +951,7 @@ function resetRace() {
   raceTime = 0; lastBeep = -1; finishShownAt = null;
   countT = 3.6;
   state = 'countdown';
+  spawnBolts();
   updateCamera(0, true);
   showModal(null);
 }
@@ -1033,8 +1203,13 @@ function hostRoom(name) {
   });
   peer.on('error', e => {
     if (net.mode !== 'host') return;
-    if (e.type === 'unavailable-id') leaveOnline('That room code was taken — host again for a fresh one.');
-    else leaveOnline('Could not reach the matchmaking service. Try again.');
+    if (e.type === 'unavailable-id') { leaveOnline('That room code was taken — host again for a fresh one.'); return; }
+    // Broker trouble is only fatal while the lobby is still empty; established
+    // WebRTC connections don't need the broker to keep working.
+    if (state === 'menu' && net.conns.length === 0) leaveOnline('Could not reach the matchmaking service. Try again.');
+  });
+  peer.on('disconnected', () => {
+    if (net.mode === 'host' && net.peer === peer) { try { peer.reconnect(); } catch (e) {} }
   });
 }
 
@@ -1053,6 +1228,7 @@ function onHostMsg(conn, m) {
     if (b && b.remote) {
       b.netIn.th = clamp(+m.th || 0, -1, 1);
       b.netIn.st = clamp(+m.st || 0, -1, 1);
+      b.netIn.sp = m.sp ? 1 : 0;
     }
   } else if (m.t === 'ping') {
     netSend(conn, { t: 'pong', ts: m.ts });
@@ -1099,8 +1275,12 @@ function joinRoom(code, name) {
   });
   peer.on('error', e => {
     if (net.mode !== 'guest') return;
-    if (e.type === 'peer-unavailable') leaveOnline(`No room found with code ${code}.`);
-    else leaveOnline('Could not reach the matchmaking service. Try again.');
+    if (e.type === 'peer-unavailable') { leaveOnline(`No room found with code ${code}.`); return; }
+    // Broker trouble only matters before the host connection is established
+    if (!(net.conns[0] && net.conns[0].open)) leaveOnline('Could not reach the matchmaking service. Try again.');
+  });
+  peer.on('disconnected', () => {
+    if (net.mode === 'guest' && net.peer === peer) { try { peer.reconnect(); } catch (e) {} }
   });
 }
 
@@ -1123,7 +1303,7 @@ function onGuestMsg(m) {
     net.snaps = [];
     resetRace();
   } else if (m.t === 'snap') {
-    net.snaps.push({ rx: performance.now() / 1000, rt: m.rt, b: m.b });
+    net.snaps.push({ rx: performance.now() / 1000, rt: m.rt, b: m.b, k: m.k });
     if (net.snaps.length > 8) net.snaps.shift();
   } else if (m.t === 'pong') {
     const rtt = performance.now() / 1000 - m.ts;
@@ -1141,8 +1321,10 @@ function hostSendSnap() {
       Math.round(b.x * 10) / 10, Math.round(b.y * 10) / 10,
       Math.round(b.a * 1000) / 1000,
       Math.round(b.vx), Math.round(b.vy),
-      b.prog, b.lapsDone, b.bestLap, b.finished ? 1 : 0, b.finishTime
-    ])
+      b.prog, b.lapsDone, b.bestLap, b.finished ? 1 : 0, b.finishTime,
+      b.boostHeld ? 1 : 0, Math.round(b.boostT * 10) / 10
+    ]),
+    k: bolts.map(o => [Math.round(o.x), Math.round(o.y), o.active ? 1 : 0])
   });
 }
 
@@ -1173,14 +1355,29 @@ function guestUpdate(dt) {
       // authoritative race bookkeeping for everyone, including me
       b.prog = a1[5]; b.lapsDone = a1[6]; b.bestLap = a1[7];
       b.finished = !!a1[8]; b.finishTime = a1[9];
-      if (i === ME) return;   // my hull is predicted locally below
+      if (i === ME) {
+        // boost state is authoritative unless we just predicted an activation
+        if (b.boostLockT <= 0) {
+          if (!b.boostHeld && a1[10]) snd.ding();
+          b.boostHeld = !!a1[10];
+          b.boostT = a1[11] || 0;
+        }
+        return;   // my hull is predicted locally below
+      }
       b.x = a0[0] + (a1[0] - a0[0]) * k;
       b.y = a0[1] + (a1[1] - a0[1]) * k;
       b.a = wrapAng(a0[2] + wrapAng(a1[2] - a0[2]) * k);
       b.vx = a1[3]; b.vy = a1[4];
+      b.boostHeld = !!a1[10]; b.boostT = a1[11] || 0;
       wake(b);
     });
     raceTime = s1.rt;
+    // bolts are fully host-authoritative
+    const kk = S[S.length - 1].k;
+    if (kk) bolts.forEach((o, i) => {
+      if (!kk[i]) return;
+      o.x = kk[i][0]; o.y = kk[i][1]; o.active = !!kk[i][2];
+    });
   }
 
   // client-side prediction: run my own physics locally so controls feel instant
@@ -1189,6 +1386,10 @@ function guestUpdate(dt) {
                   (keys['s'] || keys['ArrowDown']) ? -1 : 0;
     me.steer = ((keys['a'] || keys['ArrowLeft']) ? -1 : 0) +
                ((keys['d'] || keys['ArrowRight']) ? 1 : 0);
+    if (keys[' '] && me.boostHeld && me.boostT <= 0) {
+      activateBoost(me);           // predicted; host confirms via snapshots
+      me.boostLockT = 0.6;
+    }
   } else {
     me.throttle = 0; me.steer = 0;
   }
@@ -1231,11 +1432,12 @@ function guestUpdate(dt) {
 
   // stream my controls to the host (instant on change, 20Hz keepalive)
   if (!me.finished && state === 'racing') {
-    const packed = me.throttle + ':' + me.steer;
+    const sp = keys[' '] ? 1 : 0;
+    const packed = me.throttle + ':' + me.steer + ':' + sp;
     if (packed !== net.lastIn || perf - net.lastInSent > 0.05) {
       net.lastIn = packed;
       net.lastInSent = perf;
-      netSend(net.conns[0], { t: 'in', th: me.throttle, st: me.steer });
+      netSend(net.conns[0], { t: 'in', th: me.throttle, st: me.steer, sp });
     }
   }
 }
@@ -1368,13 +1570,18 @@ function frame(now) {
         if (b.remote) {
           b.throttle = b.finished ? 0 : b.netIn.th;
           b.steer = b.finished ? 0 : b.netIn.st;
-        } else if (b.ai && !b.finished) driveAI(b, dt, player.prog);
-        else if (b.ai) { b.throttle = 0; b.steer = 0; }
+          if (b.netIn.sp && !b.finished) activateBoost(b);
+        } else if (b.ai && !b.finished) {
+          driveAI(b, dt, player.prog);
+          if (b.boostHeld && raceTime >= b.boostUseAt) activateBoost(b);
+        } else if (b.ai) { b.throttle = 0; b.steer = 0; }
         stepBoat(b, dt);
         updateProgress(b);
         checkLaps(b);
         wake(b);
       }
+      if (keys[' '] && !player.finished && state === 'racing') activateBoost(player);
+      updateBolts(dt);
 
       // boat-vs-boat bumping
       for (let i = 0; i < boats.length; i++)
@@ -1422,11 +1629,13 @@ function frame(now) {
   ctx.setTransform(RES, 0, 0, RES, -cam.x * RES, -cam.y * RES);
   drawWater();
   drawWhirls();
+  if (state !== 'menu') drawBolts();
   drawParts();
   drawBuoys();
   if (state !== 'menu' && boats.length) for (const b of [...boats].reverse()) drawBoat(b);
   ctx.setTransform(RES, 0, 0, RES, 0, 0);
   drawMinimap();
+  drawBoostHud();
   if (state === 'countdown') {
     const n = Math.ceil(countT - 0.6);
     drawCountdown(n >= 1 ? String(n) : 'GO!');
@@ -1443,7 +1652,7 @@ requestAnimationFrame(loop);
 // dev hook: step the simulation without waiting on requestAnimationFrame
 window.__lanchas = {
   step: ms => frame(lastT + ms),
-  state: () => ({ state, raceTime, boats, track: T.def.id, netMode: net.mode, code: net.code, mySlot: net.mySlot, ME }),
+  state: () => ({ state, raceTime, boats, bolts, track: T.def.id, netMode: net.mode, code: net.code, mySlot: net.mySlot, ME }),
   selectTrack
 };
 
