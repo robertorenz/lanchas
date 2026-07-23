@@ -235,22 +235,36 @@ const snd = {
 try { snd.muted = localStorage.getItem('lanchas-muted') === '1'; } catch (e) {}
 
 // ---------------------------------------------------------------- boats
-const ROSTER = [
-  { name: 'You',      color: '#E2523E', trim: '#EDF4F7', ai: false },
-  { name: 'Corsario', color: '#2E9E9B', trim: '#0B2434', ai: true, skill: .955 },
-  { name: 'Pelícano', color: '#F5B841', trim: '#0B2434', ai: true, skill: .925 },
-  { name: 'Tormenta', color: '#ECEFF1', trim: '#E2523E', ai: true, skill: .895 }
+const SLOT_STYLE = [
+  { color: '#E2523E', trim: '#EDF4F7' },
+  { color: '#2E9E9B', trim: '#0B2434' },
+  { color: '#F5B841', trim: '#0B2434' },
+  { color: '#ECEFF1', trim: '#E2523E' }
 ];
+const AI_NAMES = ['Skipper', 'Corsario', 'Pelícano', 'Tormenta'];
+const AI_SKILL = [.94, .955, .925, .895];
+
+function defaultRoster() {
+  return SLOT_STYLE.map((s, i) => i === 0
+    ? { name: 'You', ai: false, remote: false }
+    : { name: AI_NAMES[i], ai: true, remote: false, skill: AI_SKILL[i] });
+}
 
 let boats = [];
+let raceRoster = null;   // null -> solo default; set for online races
+let ME = 0;              // index of the boat this browser controls
 
 function spawnBoats() {
-  boats = ROSTER.map((r, i) => {
+  const roster = raceRoster || defaultRoster();
+  boats = roster.map((r, i) => {
     const row = Math.floor(i / 2), lane = (i % 2 === 0 ? 1 : -1) * 14;
     const idx = (T.startIdx - 12 - row * 11 + T.N) % T.N;
     const p = T.pts[idx];
     return {
-      ...r,
+      name: r.name, ai: !!r.ai, remote: !!r.remote,
+      skill: r.skill ?? AI_SKILL[i],
+      color: SLOT_STYLE[i].color, trim: SLOT_STYLE[i].trim,
+      netIn: { th: 0, st: 0 },
       x: p.x + p.nx * lane, y: p.y + p.ny * lane,
       a: Math.atan2(p.ty, p.tx),
       vx: 0, vy: 0, steer: 0, throttle: 0,
@@ -313,7 +327,7 @@ function stepBoat(b, dt) {
     b.vx *= 0.97; b.vy *= 0.97;
     if (b.grindCool <= 0 && spd > 60) {
       spray(b.x + nx * 6, b.y + ny * 6, 5);
-      if (!b.ai) snd.thud();
+      if (b === boats[ME]) snd.thud();
       b.grindCool = .35;
     }
   }
@@ -333,7 +347,7 @@ function stepBoat(b, dt) {
         b.vx *= 0.82; b.vy *= 0.82;
         if (b.bumpCool <= 0) {
           spray(b.x, b.y, 8);
-          if (!b.ai) snd.thud();
+          if (b === boats[ME]) snd.thud();
           b.bumpCool = .3;
         }
       }
@@ -664,6 +678,7 @@ const hud = {
 };
 const modals = {
   start: document.getElementById('modal-start'),
+  online: document.getElementById('modal-online'),
   pause: document.getElementById('modal-pause'),
   finish: document.getElementById('modal-finish')
 };
@@ -685,11 +700,11 @@ function resetRace() {
 
 function playerRank() {
   const sorted = [...boats].sort((a, b2) => b2.prog - a.prog);
-  return sorted.indexOf(boats[0]) + 1;
+  return sorted.indexOf(boats[ME]) + 1;
 }
 
 function updateHud() {
-  const p = boats[0];
+  const p = boats[ME];
   const lap = clamp(p.lapsDone + 1, 1, TOTAL_LAPS);
   hud.lap.textContent = p.finished ? `${TOTAL_LAPS}/${TOTAL_LAPS}` : `${lap}/${TOTAL_LAPS}`;
   hud.pos.textContent = ORD(playerRank());
@@ -704,7 +719,7 @@ function checkLaps(b) {
     const lapTime = raceTime - b.lapStamp;
     b.lapStamp = raceTime;
     if (done > 0 && (b.bestLap == null || lapTime < b.bestLap)) b.bestLap = lapTime;
-    if (!b.ai && done < TOTAL_LAPS) snd.beep(880, .15, .25);
+    if (b === boats[ME] && done < TOTAL_LAPS) snd.beep(880, .15, .25);
     if (done >= TOTAL_LAPS && !b.finished) {
       b.finished = true;
       b.finishTime = raceTime;
@@ -713,7 +728,7 @@ function checkLaps(b) {
 }
 
 function showResults() {
-  const p = boats[0];
+  const p = boats[ME];
   const rank = [...boats].sort((a, b) => {
     if (a.finished && b.finished) return a.finishTime - b.finishTime;
     if (a.finished) return -1;
@@ -724,13 +739,14 @@ function showResults() {
   document.getElementById('finish-title').textContent =
     place === 1 ? 'Checkered flag — you win!' : `You finished ${ORD(place)}`;
   document.getElementById('finish-sub').textContent =
+    net.mode === 'guest' ? 'Waiting for the host to start the next race…' :
     place === 1 ? `Fastest lancha on ${T.def.name} today.`
                 : 'The podium slips away — take another run at it.';
   const tbody = modals.finish.querySelector('tbody');
   tbody.innerHTML = '';
   rank.forEach((b, i) => {
     const tr = document.createElement('tr');
-    if (!b.ai) tr.className = 'you';
+    if (b === p) tr.className = 'you';
     const res = b.finished ? fmtTime(b.finishTime)
                            : `Lap ${clamp(b.lapsDone + 1, 1, TOTAL_LAPS)}/${TOTAL_LAPS}`;
     tr.innerHTML = `<td>${ORD(i + 1)}</td>` +
@@ -738,14 +754,19 @@ function showResults() {
       `<td>${res}</td>`;
     tbody.appendChild(tr);
   });
+  document.getElementById('btn-restart').classList.toggle('hidden', net.mode === 'guest');
+  document.getElementById('btn-change-track').classList.toggle('hidden', net.mode !== null);
+  document.getElementById('btn-leave-finish').classList.toggle('hidden', net.mode === null);
   showModal('finish');
 }
 
 // ---------------------------------------------------------------- track select
 const marqueeSub = document.getElementById('marquee-sub');
 const grid = document.getElementById('track-grid');
+let currentTrackIdx = 0;
 
 function selectTrack(i, save = true) {
+  currentTrackIdx = i;
   T = built[i];
   marqueeSub.textContent = `SUPER HARBOR SPRINT · ${T.def.name.toUpperCase()} · ${TOTAL_LAPS} LAPS`;
   for (const el of grid.children)
@@ -793,34 +814,360 @@ let savedTrack = 0;
 try { savedTrack = clamp(parseInt(localStorage.getItem('lanchas-track') || '0', 10) || 0, 0, TRACKS.length - 1); } catch (e) {}
 selectTrack(savedTrack, false);
 
+// ---------------------------------------------------------------- online play
+// Host-authoritative over WebRTC (PeerJS): guests stream inputs, the host
+// simulates every boat and broadcasts snapshots that guests interpolate.
+const net = {
+  mode: null,        // null | 'host' | 'guest'
+  peer: null,
+  conns: [],         // host: one per guest; guest: [connection to host]
+  code: null,
+  myName: '',
+  mySlot: 0,
+  lobby: [],         // host: [{slot, name, conn|null}]
+  snaps: [],         // guest: recent snapshots [{rx, rt, b:[...]}]
+  lastSnapSent: 0,
+  lastInSent: 0,
+  lastIn: ''
+};
+
+const ui = id => document.getElementById(id);
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const makeCode = () => Array.from({ length: 4 },
+  () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]).join('');
+const roomId = code => 'lanchas-' + code.toLowerCase();
+
+function cleanName(v, fallback) {
+  const s = (v || '').trim().slice(0, 12);
+  return s || fallback;
+}
+
+function netSend(conn, msg) { if (conn && conn.open) conn.send(msg); }
+function netBroadcast(msg) { for (const c of net.conns) netSend(c, msg); }
+
+function teardownNet() {
+  if (net.peer) { try { net.peer.destroy(); } catch (e) {} }
+  net.mode = null; net.peer = null; net.conns = []; net.lobby = [];
+  net.snaps = []; net.code = null; net.mySlot = 0;
+  raceRoster = null; ME = 0;
+}
+
+function leaveOnline(reason) {
+  teardownNet();
+  state = 'menu';
+  snd.setEngine(0, false);
+  const status = ui('online-status');
+  status.hidden = !reason;
+  status.textContent = reason || '';
+  showModal('start');
+}
+
+// ---- lobby UI ----
+function openOnlineModal(mode) {
+  ui('online-title').textContent = mode === 'host' ? 'Host an online race' : 'Join an online race';
+  ui('btn-online-go').textContent = mode === 'host' ? 'Create room' : 'Join room';
+  ui('online-code-wrap').hidden = mode === 'host';
+  ui('online-setup').hidden = false;
+  ui('online-lobby').hidden = true;
+  ui('online-setup-status').textContent = '';
+  ui('btn-online-go').dataset.mode = mode;
+  showModal('online');
+  ui('online-name').focus();
+}
+
+function lobbyRosterNames() {
+  return SLOT_STYLE.map((s, i) => {
+    const pl = net.lobby.find(p => p.slot === i);
+    return pl ? { name: pl.name, human: true } : { name: AI_NAMES[i], human: false };
+  });
+}
+
+function renderLobby() {
+  ui('online-setup').hidden = true;
+  ui('online-lobby').hidden = false;
+  ui('lobby-code').textContent = net.code || '----';
+  ui('lobby-track').textContent = TRACKS[currentTrackIdx].name;
+  const list = ui('lobby-players');
+  list.innerHTML = '';
+  lobbyRosterNames().forEach((p, i) => {
+    const li = document.createElement('li');
+    const isMe = (net.mode === 'host' && i === 0) || (net.mode === 'guest' && i === net.mySlot);
+    li.innerHTML = `<span class="swatch" style="background:${SLOT_STYLE[i].color}"></span>` +
+      `<span>${p.name}${isMe ? ' (you)' : ''}</span>` +
+      `<span class="who">${p.human ? 'player' : 'AI'}</span>`;
+    list.appendChild(li);
+  });
+  ui('btn-lobby-start').classList.toggle('hidden', net.mode !== 'host');
+  ui('lobby-status').textContent = net.mode === 'host'
+    ? 'Share the code. Empty seats race as AI.'
+    : 'Waiting for the host to start…';
+}
+
+// ---- hosting ----
+function hostRoom(name) {
+  net.mode = 'host';
+  net.myName = name;
+  net.code = makeCode();
+  ui('online-setup-status').textContent = 'Contacting the harbor master…';
+  const peer = new Peer(roomId(net.code));
+  net.peer = peer;
+  peer.on('open', () => {
+    net.lobby = [{ slot: 0, name: net.myName, conn: null }];
+    renderLobby();
+  });
+  peer.on('connection', conn => {
+    conn.on('open', () => {
+      const used = new Set(net.lobby.map(p => p.slot));
+      let slot = -1;
+      for (let i = 1; i < 4; i++) if (!used.has(i)) { slot = i; break; }
+      if (slot === -1 || state !== 'menu') {
+        netSend(conn, { t: 'full' });
+        setTimeout(() => conn.close(), 300);
+        return;
+      }
+      conn.slot = slot;
+      net.conns.push(conn);
+      net.lobby.push({ slot, name: 'Captain', conn });
+      netSend(conn, { t: 'welcome', slot, track: currentTrackIdx });
+      broadcastLobby();
+    });
+    conn.on('data', m => onHostMsg(conn, m));
+    conn.on('close', () => dropGuest(conn));
+    conn.on('error', () => dropGuest(conn));
+  });
+  peer.on('error', e => {
+    if (net.mode !== 'host') return;
+    if (e.type === 'unavailable-id') leaveOnline('That room code was taken — host again for a fresh one.');
+    else leaveOnline('Could not reach the matchmaking service. Try again.');
+  });
+}
+
+function broadcastLobby() {
+  netBroadcast({ t: 'lobby', players: net.lobby.map(p => ({ slot: p.slot, name: p.name })), track: currentTrackIdx });
+  renderLobby();
+}
+
+function onHostMsg(conn, m) {
+  if (!m || typeof m !== 'object') return;
+  if (m.t === 'hello') {
+    const pl = net.lobby.find(p => p.conn === conn);
+    if (pl) { pl.name = cleanName(m.name, `Captain ${pl.slot + 1}`); broadcastLobby(); }
+  } else if (m.t === 'in') {
+    const b = boats[conn.slot];
+    if (b && b.remote) {
+      b.netIn.th = clamp(+m.th || 0, -1, 1);
+      b.netIn.st = clamp(+m.st || 0, -1, 1);
+    }
+  }
+}
+
+function dropGuest(conn) {
+  net.conns = net.conns.filter(c => c !== conn);
+  const pl = net.lobby.find(p => p.conn === conn);
+  if (!pl) return;
+  net.lobby = net.lobby.filter(p => p !== pl);
+  const b = boats[pl.slot];
+  if (b && b.remote) { b.remote = false; b.ai = true; }   // mid-race: AI takes over
+  if (state === 'menu') broadcastLobby();
+}
+
+function hostStartRace() {
+  const roster = lobbyRosterNames().map((p, i) => ({
+    name: i === 0 ? net.myName : p.name,
+    ai: !p.human && i !== 0,
+    remote: p.human && i !== 0,
+    skill: AI_SKILL[i]
+  }));
+  raceRoster = roster;
+  ME = 0;
+  netBroadcast({ t: 'start', track: currentTrackIdx, roster: roster.map(r => ({ name: r.name, ai: r.ai })) });
+  resetRace();
+}
+
+// ---- joining ----
+function joinRoom(code, name) {
+  net.mode = 'guest';
+  net.myName = name;
+  net.code = code;
+  ui('online-setup-status').textContent = 'Looking for the room…';
+  const peer = new Peer();
+  net.peer = peer;
+  peer.on('open', () => {
+    const conn = peer.connect(roomId(code), { serialization: 'json' });
+    net.conns = [conn];
+    conn.on('open', () => netSend(conn, { t: 'hello', name: net.myName }));
+    conn.on('data', onGuestMsg);
+    conn.on('close', () => { if (net.mode === 'guest') leaveOnline('Lost the connection to the host.'); });
+  });
+  peer.on('error', e => {
+    if (net.mode !== 'guest') return;
+    if (e.type === 'peer-unavailable') leaveOnline(`No room found with code ${code}.`);
+    else leaveOnline('Could not reach the matchmaking service. Try again.');
+  });
+}
+
+function onGuestMsg(m) {
+  if (!m || typeof m !== 'object') return;
+  if (m.t === 'welcome') {
+    net.mySlot = m.slot;
+    selectTrack(m.track, false);
+    renderLobby();
+  } else if (m.t === 'lobby') {
+    net.lobby = m.players.map(p => ({ slot: p.slot, name: p.name, conn: null }));
+    selectTrack(m.track, false);
+    if (state === 'menu') renderLobby();
+  } else if (m.t === 'full') {
+    leaveOnline('That room is full or already racing.');
+  } else if (m.t === 'start') {
+    selectTrack(m.track, false);
+    raceRoster = m.roster.map(r => ({ name: r.name, ai: r.ai, remote: false }));
+    ME = net.mySlot;
+    net.snaps = [];
+    resetRace();
+  } else if (m.t === 'snap') {
+    net.snaps.push({ rx: performance.now() / 1000, rt: m.rt, b: m.b });
+    if (net.snaps.length > 6) net.snaps.shift();
+  }
+}
+
+// ---- host: broadcast snapshots ----
+function hostSendSnap() {
+  if (perf - net.lastSnapSent < 0.066) return;
+  net.lastSnapSent = perf;
+  netBroadcast({
+    t: 'snap', rt: raceTime,
+    b: boats.map(b => [
+      Math.round(b.x * 10) / 10, Math.round(b.y * 10) / 10,
+      Math.round(b.a * 1000) / 1000,
+      Math.round(b.vx), Math.round(b.vy),
+      b.prog, b.lapsDone, b.bestLap, b.finished ? 1 : 0, b.finishTime
+    ])
+  });
+}
+
+// ---- guest: interpolate snapshots, stream inputs ----
+function guestUpdate() {
+  const S = net.snaps;
+  if (!S.length || !boats.length) return;
+  const now = performance.now() / 1000 - 0.12;   // render slightly in the past
+  let s0 = S[0], s1 = S[S.length - 1];
+  for (let i = 0; i < S.length - 1; i++)
+    if (S[i].rx <= now && S[i + 1].rx >= now) { s0 = S[i]; s1 = S[i + 1]; break; }
+  if (now > s1.rx) s0 = s1;
+  const span = s1.rx - s0.rx;
+  const k = span > 0.001 ? clamp((now - s0.rx) / span, 0, 1) : 1;
+  boats.forEach((b, i) => {
+    const a0 = s0.b[i], a1 = s1.b[i];
+    if (!a0 || !a1) return;
+    b.x = a0[0] + (a1[0] - a0[0]) * k;
+    b.y = a0[1] + (a1[1] - a0[1]) * k;
+    b.a = wrapAng(a0[2] + wrapAng(a1[2] - a0[2]) * k);
+    b.vx = a1[3]; b.vy = a1[4];
+    b.prog = a1[5]; b.lapsDone = a1[6]; b.bestLap = a1[7];
+    b.finished = !!a1[8]; b.finishTime = a1[9];
+    wake(b);
+  });
+  raceTime = s1.rt;
+
+  // stream my controls to the host
+  const me = boats[ME];
+  if (me && !me.finished && state === 'racing') {
+    const th = (keys['w'] || keys['ArrowUp']) ? 1 : (keys['s'] || keys['ArrowDown']) ? -1 : 0;
+    const st = ((keys['a'] || keys['ArrowLeft']) ? -1 : 0) + ((keys['d'] || keys['ArrowRight']) ? 1 : 0);
+    const packed = th + ':' + st;
+    if (packed !== net.lastIn || perf - net.lastInSent > 0.1) {
+      net.lastIn = packed;
+      net.lastInSent = perf;
+      netSend(net.conns[0], { t: 'in', th, st });
+    }
+  }
+}
+
 // ---------------------------------------------------------------- input
 const keys = {};
 window.addEventListener('keydown', e => {
+  if (e.target && e.target.tagName === 'INPUT') return;
   const k = e.key;
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(k)) e.preventDefault();
   keys[k.length === 1 ? k.toLowerCase() : k] = true;
   if (k === 'Escape') {
-    if (state === 'racing') { state = 'paused'; showModal('pause'); snd.setEngine(0, false); }
-    else if (state === 'paused') { state = 'racing'; showModal(null); }
+    if (net.mode) {
+      // online races never stop; Esc just toggles the leave menu
+      if (state === 'racing' || state === 'finished') {
+        const open = !modals.pause.classList.contains('hidden');
+        preparePauseModal();
+        showModal(open ? null : 'pause');
+      }
+    } else if (state === 'racing') {
+      state = 'paused'; preparePauseModal(); showModal('pause'); snd.setEngine(0, false);
+    } else if (state === 'paused') {
+      state = 'racing'; showModal(null);
+    }
   }
 });
 window.addEventListener('keyup', e => {
+  if (e.target && e.target.tagName === 'INPUT') return;
   const k = e.key;
   keys[k.length === 1 ? k.toLowerCase() : k] = false;
 });
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && state === 'racing') {
-    state = 'paused'; showModal('pause'); snd.setEngine(0, false);
+  if (document.hidden && state === 'racing' && !net.mode) {
+    state = 'paused'; preparePauseModal(); showModal('pause'); snd.setEngine(0, false);
   }
 });
 
-document.getElementById('btn-start').addEventListener('click', () => { snd.init(); resetRace(); });
-document.getElementById('btn-restart').addEventListener('click', resetRace);
-document.getElementById('btn-restart-pause').addEventListener('click', resetRace);
-document.getElementById('btn-resume').addEventListener('click', () => { state = 'racing'; showModal(null); });
+function preparePauseModal() {
+  const online = net.mode !== null;
+  document.getElementById('pause-sub').textContent = online
+    ? 'The race keeps running while this menu is open.'
+    : 'The boats are idling. Press Esc or resume when ready.';
+  document.getElementById('btn-restart-pause').classList.toggle('hidden', online);
+  document.getElementById('btn-leave-pause').classList.toggle('hidden', !online);
+}
+
+document.getElementById('btn-start').addEventListener('click', () => {
+  snd.init();
+  raceRoster = null; ME = 0;
+  resetRace();
+});
+document.getElementById('btn-restart').addEventListener('click', () => {
+  if (net.mode === 'host') hostStartRace();
+  else if (net.mode === null) resetRace();
+});
+document.getElementById('btn-restart-pause').addEventListener('click', () => { if (!net.mode) resetRace(); });
+document.getElementById('btn-resume').addEventListener('click', () => {
+  if (state === 'paused') state = 'racing';
+  showModal(null);
+});
 document.getElementById('btn-change-track').addEventListener('click', () => {
   state = 'menu';
   showModal('start');
+});
+
+// online buttons
+document.getElementById('btn-online-host').addEventListener('click', () => { snd.init(); openOnlineModal('host'); });
+document.getElementById('btn-online-join').addEventListener('click', () => { snd.init(); openOnlineModal('join'); });
+document.getElementById('btn-online-cancel').addEventListener('click', () => leaveOnline(''));
+document.getElementById('btn-online-leave').addEventListener('click', () => leaveOnline(''));
+document.getElementById('btn-leave-pause').addEventListener('click', () => leaveOnline(''));
+document.getElementById('btn-leave-finish').addEventListener('click', () => leaveOnline(''));
+document.getElementById('btn-lobby-start').addEventListener('click', () => { if (net.mode === 'host') hostStartRace(); });
+document.getElementById('btn-online-go').addEventListener('click', () => {
+  const mode = document.getElementById('btn-online-go').dataset.mode;
+  const name = cleanName(document.getElementById('online-name').value, 'Captain');
+  if (typeof Peer === 'undefined') {
+    ui('online-setup-status').textContent = 'Multiplayer library failed to load — check your connection and reload.';
+    return;
+  }
+  if (mode === 'host') hostRoom(name);
+  else {
+    const code = (document.getElementById('online-code').value || '').trim().toUpperCase();
+    if (code.length !== 4) { ui('online-setup-status').textContent = 'Enter the 4-letter room code.'; return; }
+    joinRoom(code, name);
+  }
+});
+document.getElementById('online-code').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('btn-online-go').click();
 });
 
 const muteBtn = document.getElementById('btn-mute');
@@ -844,46 +1191,55 @@ function frame(now) {
     if (countT <= 0) state = 'racing';
   }
 
-  if (state === 'racing' || state === 'finished') {
-    raceTime += dt;
-    const player = boats[0];
+  if ((state === 'racing' || state === 'finished') && boats.length) {
+    const player = boats[ME];
 
-    if (!player.finished && state === 'racing') {
-      player.throttle = (keys['w'] || keys['ArrowUp']) ? 1 :
-                        (keys['s'] || keys['ArrowDown']) ? -1 : 0;
-      player.steer = ((keys['a'] || keys['ArrowLeft']) ? -1 : 0) +
-                     ((keys['d'] || keys['ArrowRight']) ? 1 : 0);
+    if (net.mode === 'guest') {
+      guestUpdate();       // boats come from host snapshots; inputs stream out
     } else {
-      player.throttle = 0; player.steer = 0;
-    }
+      raceTime += dt;
+      if (!player.finished && state === 'racing') {
+        player.throttle = (keys['w'] || keys['ArrowUp']) ? 1 :
+                          (keys['s'] || keys['ArrowDown']) ? -1 : 0;
+        player.steer = ((keys['a'] || keys['ArrowLeft']) ? -1 : 0) +
+                       ((keys['d'] || keys['ArrowRight']) ? 1 : 0);
+      } else {
+        player.throttle = 0; player.steer = 0;
+      }
 
-    for (const b of boats) {
-      if (b.ai && !b.finished) driveAI(b, dt, player.prog);
-      else if (b.ai) { b.throttle = 0; b.steer = 0; }
-      stepBoat(b, dt);
-      updateProgress(b);
-      checkLaps(b);
-      wake(b);
-    }
+      for (const b of boats) {
+        if (b.remote) {
+          b.throttle = b.finished ? 0 : b.netIn.th;
+          b.steer = b.finished ? 0 : b.netIn.st;
+        } else if (b.ai && !b.finished) driveAI(b, dt, player.prog);
+        else if (b.ai) { b.throttle = 0; b.steer = 0; }
+        stepBoat(b, dt);
+        updateProgress(b);
+        checkLaps(b);
+        wake(b);
+      }
 
-    // boat-vs-boat bumping
-    for (let i = 0; i < boats.length; i++)
-      for (let j = i + 1; j < boats.length; j++) {
-        const A = boats[i], B = boats[j];
-        const dx = B.x - A.x, dy = B.y - A.y;
-        const d = Math.hypot(dx, dy);
-        if (d < HULL_R * 2 && d > 0.001) {
-          const nx = dx / d, ny = dy / d, push = (HULL_R * 2 - d) / 2;
-          A.x -= nx * push; A.y -= ny * push;
-          B.x += nx * push; B.y += ny * push;
-          const rel = (B.vx - A.vx) * nx + (B.vy - A.vy) * ny;
-          if (rel < 0) {
-            A.vx += rel * .55 * nx; A.vy += rel * .55 * ny;
-            B.vx -= rel * .55 * nx; B.vy -= rel * .55 * ny;
-            spray((A.x + B.x) / 2, (A.y + B.y) / 2, 4);
+      // boat-vs-boat bumping
+      for (let i = 0; i < boats.length; i++)
+        for (let j = i + 1; j < boats.length; j++) {
+          const A = boats[i], B = boats[j];
+          const dx = B.x - A.x, dy = B.y - A.y;
+          const d = Math.hypot(dx, dy);
+          if (d < HULL_R * 2 && d > 0.001) {
+            const nx = dx / d, ny = dy / d, push = (HULL_R * 2 - d) / 2;
+            A.x -= nx * push; A.y -= ny * push;
+            B.x += nx * push; B.y += ny * push;
+            const rel = (B.vx - A.vx) * nx + (B.vy - A.vy) * ny;
+            if (rel < 0) {
+              A.vx += rel * .55 * nx; A.vy += rel * .55 * ny;
+              B.vx -= rel * .55 * nx; B.vy -= rel * .55 * ny;
+              spray((A.x + B.x) / 2, (A.y + B.y) / 2, 4);
+            }
           }
         }
-      }
+
+      if (net.mode === 'host') hostSendSnap();
+    }
 
     snd.setEngine(Math.hypot(player.vx, player.vy), state === 'racing' && !player.finished);
 
@@ -926,7 +1282,7 @@ requestAnimationFrame(loop);
 // dev hook: step the simulation without waiting on requestAnimationFrame
 window.__lanchas = {
   step: ms => frame(lastT + ms),
-  state: () => ({ state, raceTime, boats, track: T.def.id }),
+  state: () => ({ state, raceTime, boats, track: T.def.id, netMode: net.mode, code: net.code, mySlot: net.mySlot, ME }),
   selectTrack
 };
 

@@ -39,7 +39,44 @@
         <p class="controls-hint">
           <b>W/↑</b> throttle · <b>A D/← →</b> steer · <b>S/↓</b> brake · <b>Esc</b> pause
         </p>
-        <button class="btn" id="btn-start" type="button">Start race</button>
+        <p class="online-status" id="online-status" hidden></p>
+        <div class="btn-row">
+          <button class="btn" id="btn-start" type="button">Start race</button>
+          <button class="btn btn-quiet" id="btn-online-host" type="button">Host online</button>
+          <button class="btn btn-quiet" id="btn-online-join" type="button">Join online</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Online lobby modal -->
+    <div class="overlay hidden" id="modal-online">
+      <div class="modal">
+        <h2 id="online-title">Host an online race</h2>
+        <div id="online-setup">
+          <label class="field-label" for="online-name">Your name</label>
+          <input class="field" id="online-name" maxlength="12" autocomplete="off" placeholder="Captain">
+          <div id="online-code-wrap" hidden>
+            <label class="field-label" for="online-code">Room code</label>
+            <input class="field field-code" id="online-code" maxlength="4" autocomplete="off"
+                   placeholder="ABCD" spellcheck="false">
+          </div>
+          <p class="lobby-status" id="online-setup-status"></p>
+          <div class="btn-row">
+            <button class="btn" id="btn-online-go" type="button">Create room</button>
+            <button class="btn btn-quiet" id="btn-online-cancel" type="button">Back</button>
+          </div>
+        </div>
+        <div id="online-lobby" hidden>
+          <p class="lobby-line">Room code</p>
+          <p class="lobby-code" id="lobby-code">----</p>
+          <p class="lobby-line">Track: <b id="lobby-track"></b></p>
+          <ul class="lobby-players" id="lobby-players"></ul>
+          <p class="lobby-status" id="lobby-status"></p>
+          <div class="btn-row">
+            <button class="btn" id="btn-lobby-start" type="button">Start race</button>
+            <button class="btn btn-quiet" id="btn-online-leave" type="button">Leave</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -47,10 +84,11 @@
     <div class="overlay hidden" id="modal-pause">
       <div class="modal">
         <h2>Paused</h2>
-        <p>The boats are idling. Press Esc or resume when ready.</p>
+        <p id="pause-sub">The boats are idling. Press Esc or resume when ready.</p>
         <div class="btn-row">
           <button class="btn" id="btn-resume" type="button">Resume</button>
           <button class="btn btn-quiet" id="btn-restart-pause" type="button">Restart race</button>
+          <button class="btn btn-quiet hidden" id="btn-leave-pause" type="button">Leave race</button>
         </div>
       </div>
     </div>
@@ -67,6 +105,7 @@
         <div class="btn-row">
           <button class="btn" id="btn-restart" type="button">Race again</button>
           <button class="btn btn-quiet" id="btn-change-track" type="button">Change track</button>
+          <button class="btn btn-quiet hidden" id="btn-leave-finish" type="button">Leave race</button>
         </div>
       </div>
     </div>
@@ -80,6 +119,7 @@
   </footer>
 
 </main>
-<script src="js/game.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js" defer></script>
+<script src="js/game.js" defer></script>
 </body>
 </html>

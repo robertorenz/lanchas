@@ -224,6 +224,67 @@ canvas {
 .controls-hint { font-size: 13px; color: var(--dim); }
 .controls-hint b { color: var(--foam); font-weight: 600; }
 
+/* ---------- online lobby ---------- */
+.hidden { display: none !important; }
+
+.online-status { color: var(--yellow); font-size: 13px; margin-bottom: 10px; }
+
+.field-label {
+  display: block;
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 5px;
+}
+.field {
+  width: min(240px, 100%);
+  background: #0D2233;
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  color: var(--foam);
+  font-family: inherit;
+  font-size: 16px;
+  padding: 9px 12px;
+  margin-bottom: 14px;
+  text-align: center;
+}
+.field:focus-visible { outline: 3px solid var(--yellow); outline-offset: 1px; }
+.field-code {
+  font-family: var(--mono);
+  font-size: 24px;
+  letter-spacing: .4em;
+  text-transform: uppercase;
+}
+
+.lobby-line { color: var(--dim); font-size: 13px; margin-bottom: 2px; }
+.lobby-line b { color: var(--sand); }
+.lobby-code {
+  font-family: var(--mono);
+  font-size: 40px;
+  letter-spacing: .35em;
+  color: var(--yellow);
+  margin: 2px 0 12px;
+}
+.lobby-players {
+  list-style: none;
+  width: min(280px, 100%);
+  margin: 0 auto 12px;
+  text-align: left;
+}
+.lobby-players li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-bottom: 1px solid #14304527;
+  font-size: 15px;
+}
+.lobby-players .swatch { flex: none; }
+.lobby-players .who { color: var(--dim); margin-left: auto; font-size: 12px; }
+.lobby-status { color: var(--dim); font-size: 13px; min-height: 18px; margin-bottom: 12px; }
+
 .btn {
   font-family: var(--display);
   font-size: 16px;
