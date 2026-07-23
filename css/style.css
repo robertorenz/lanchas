@@ -207,6 +207,7 @@ canvas {
   background: #12293C;
 }
 .track-card:focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; }
+.track-grid .track-card:last-child:nth-child(odd) { grid-column: 1 / -1; }
 .track-card canvas {
   width: 100%;
   height: auto;

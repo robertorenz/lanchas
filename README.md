@@ -50,6 +50,7 @@ is remembered):
 | **Laguna** | Wide, fast tropical oval — but the lagoon spins twice |
 | **Río Bravo** | Narrow canyon river strewn with rocks |
 | **Puerto Viejo** | Tight concrete harbor with chicanes and floating cargo |
+| **Gran Travesía** | A vast delta ~10× the size of the others — the camera scrolls with your boat, a minimap shows the field, 2 laps |
 
 ## Features
 

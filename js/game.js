@@ -31,7 +31,7 @@ const W = 1000, H = 640;   // logical playfield size; RES scales the backing sto
 let RES = 1;
 
 const HULL_R = 9;
-const TOTAL_LAPS = 3;
+let TOTAL_LAPS = 3;   // per-track (def.laps), set in selectTrack
 
 // ---------------------------------------------------------------- track roster
 // ctrl: closed Catmull-Rom loop, clockwise. t values are fractions of a lap
@@ -106,12 +106,37 @@ const TRACKS = [
              { t: .45, off: -16, r: 10 }, { t: .62, off: 18, r: 10 },
              { t: .88, off: -14, r: 10 }],
     whirls: []
+  },
+  {
+    id: 'travesia', name: 'Gran Travesía', blurb: 'A vast delta expedition — 2 laps, follow the minimap.',
+    half: 46, startNear: [950, 1815], decor: 'palms',
+    w: 3000, h: 2000, samples: 2400, laps: 2,
+    ctrl: [[300, 1750], [700, 1850], [1200, 1780], [1600, 1860], [2100, 1800],
+           [2500, 1650], [2750, 1400], [2600, 1150], [2300, 1250], [2050, 1100],
+           [2200, 850], [2550, 900], [2800, 650], [2600, 350], [2200, 250],
+           [1800, 400], [1500, 250], [1100, 300], [800, 180], [450, 300],
+           [200, 600], [350, 900], [150, 1250], [250, 1550]],
+    palette: {
+      land: '#C9C08B', shore: '#A89A64',
+      water: ['#12536E', '#1B7A9C', '#2790AF'],
+      mottle: ['rgba(139,158,96,.45)', 'rgba(168,154,100,.5)'], tree: '#47764C'
+    },
+    buoys: [{ t: .05, off: 22 }, { t: .13, off: -20 }, { t: .21, off: 20 },
+            { t: .29, off: -22 }, { t: .37, off: 20 }, { t: .45, off: -20 },
+            { t: .53, off: 22 }, { t: .61, off: -20 }, { t: .69, off: 20 },
+            { t: .77, off: -22 }, { t: .85, off: 20 }, { t: .93, off: -20 }],
+    rocks: [{ t: .09, off: 26, r: 13 }, { t: .18, off: -24, r: 11 },
+            { t: .33, off: 25, r: 12 }, { t: .41, off: -26, r: 14 },
+            { t: .57, off: 24, r: 11 }, { t: .66, off: -25, r: 13 },
+            { t: .81, off: 26, r: 12 }, { t: .97, off: -24, r: 11 }],
+    crates: [],
+    whirls: [{ t: .25, off: 0, r: 40 }, { t: .55, off: -6, r: 40 }, { t: .88, off: 4, r: 36 }]
   }
 ];
 
 function buildTrack(def) {
   const pts = [];
-  const n = def.ctrl.length, SEG = Math.round(600 / n);
+  const n = def.ctrl.length, SEG = Math.round((def.samples || 600) / n);
   for (let i = 0; i < n; i++) {
     const p0 = def.ctrl[(i - 1 + n) % n], p1 = def.ctrl[i],
           p2 = def.ctrl[(i + 1) % n], p3 = def.ctrl[(i + 2) % n];
@@ -145,6 +170,7 @@ function buildTrack(def) {
   centerPath.closePath();
   return {
     def, pts, N: NN, startIdx, half: def.half, centerPath,
+    world: { w: def.w || 1000, h: def.h || 640 },
     buoys: def.buoys.map((b, i) => ({ ...at(b.t, b.off), r: 7, phase: i * 1.7 })),
     rocks: def.rocks.map(r => ({ ...at(r.t, r.off), r: r.r })),
     crates: def.crates.map((c, i) => ({ ...at(c.t, c.off), r: c.r, rot: i * 0.9 })),
@@ -169,6 +195,8 @@ function nearestIdx(x, y, hint) {
       const d = dist2(x, y, pts[i].x, pts[i].y);
       if (d < bd) { bd = d; best = i; }
     }
+    // hint too stale (e.g. teleport correction): fall back to a full scan
+    if (bd > (T.half + 80) ** 2) return nearestIdx(x, y, null);
   }
   return best;
 }
@@ -415,16 +443,22 @@ function stepParts(dt) {
 // ---------------------------------------------------------------- static scene
 const bg = document.createElement('canvas');
 bg.width = W; bg.height = H;
+let BGR = 1;   // background backing-store scale (capped for huge worlds)
 
 function paintScene() {
+  const wld = T.world;
+  BGR = Math.min(RES, Math.sqrt(12e6 / (wld.w * wld.h)));
+  bg.width = Math.round(wld.w * BGR);
+  bg.height = Math.round(wld.h * BGR);
   const g = bg.getContext('2d');
-  g.setTransform(RES, 0, 0, RES, 0, 0);
+  g.setTransform(BGR, 0, 0, BGR, 0, 0);
   const rnd = mulberry32(20260722);
   const pal = T.def.palette;
   const pts = T.pts, NN = T.N;
+  const area = (wld.w * wld.h) / (1000 * 640);   // decoration density factor
 
   g.fillStyle = pal.land;
-  g.fillRect(0, 0, W, H);
+  g.fillRect(0, 0, wld.w, wld.h);
 
   const offChannel = (x, y, margin) => {
     let bd = Infinity;
@@ -436,8 +470,8 @@ function paintScene() {
   };
 
   // land mottling
-  for (let i = 0; i < 260; i++) {
-    const x = rnd() * W, y = rnd() * H;
+  for (let i = 0; i < Math.round(260 * area); i++) {
+    const x = rnd() * wld.w, y = rnd() * wld.h;
     if (!offChannel(x, y, T.half + 26)) continue;
     g.fillStyle = pal.mottle[rnd() < .5 ? 0 : 1];
     g.beginPath();
@@ -516,8 +550,9 @@ function paintScene() {
   // trees
   if (T.def.decor !== 'port') {
     let planted = 0, tries = 0;
-    while (planted < 8 && tries++ < 120) {
-      const px = 40 + rnd() * (W - 80), py = 40 + rnd() * (H - 80);
+    const wanted = Math.round(8 * area), maxTries = 150 * Math.ceil(area);
+    while (planted < wanted && tries++ < maxTries) {
+      const px = 40 + rnd() * (wld.w - 80), py = 40 + rnd() * (wld.h - 80);
       if (!offChannel(px, py, T.half + 34)) continue;
       planted++;
       g.fillStyle = 'rgba(9,32,46,.25)';
@@ -557,11 +592,63 @@ function applyResolution() {
   RES = target;
   cvs.width = Math.round(W * RES);
   cvs.height = Math.round(H * RES);
-  bg.width = cvs.width;
-  bg.height = cvs.height;
   paintScene();
 }
 window.addEventListener('resize', () => applyResolution());
+
+// ---------------------------------------------------------------- camera
+const cam = { x: 0, y: 0 };
+
+function updateCamera(dt, snap) {
+  const wld = T.world;
+  if (wld.w <= W && wld.h <= H) { cam.x = 0; cam.y = 0; return; }
+  const f = boats.length ? boats[ME] : null;
+  const px = f ? f.x + f.vx * 0.25 : T.pts[T.startIdx].x;
+  const py = f ? f.y + f.vy * 0.25 : T.pts[T.startIdx].y;
+  const tx = clamp(px - W / 2, 0, wld.w - W);
+  const ty = clamp(py - H / 2, 0, wld.h - H);
+  if (snap) { cam.x = tx; cam.y = ty; return; }
+  const k = 1 - Math.exp(-4 * dt);
+  cam.x += (tx - cam.x) * k;
+  cam.y += (ty - cam.y) * k;
+}
+
+// minimap for tracks larger than the screen
+let miniMap = null, miniScale = 1;
+function buildMinimap() {
+  const wld = T.world;
+  if (wld.w <= W && wld.h <= H) { miniMap = null; return; }
+  miniScale = Math.min(170 / wld.w, 120 / wld.h);
+  miniMap = document.createElement('canvas');
+  miniMap.width = Math.round(wld.w * miniScale) + 12;
+  miniMap.height = Math.round(wld.h * miniScale) + 12;
+  const mg = miniMap.getContext('2d');
+  mg.fillStyle = 'rgba(8,20,30,.78)';
+  mg.fillRect(0, 0, miniMap.width, miniMap.height);
+  mg.translate(6, 6);
+  mg.scale(miniScale, miniScale);
+  mg.lineJoin = mg.lineCap = 'round';
+  mg.strokeStyle = T.def.palette.water[1];
+  mg.lineWidth = T.half * 2.6;
+  mg.stroke(T.centerPath);
+}
+
+function drawMinimap() {
+  if (!miniMap || state === 'menu') return;
+  const mx = W - miniMap.width - 10, my = 10;
+  ctx.drawImage(miniMap, mx, my);
+  ctx.strokeStyle = 'rgba(237,244,247,.45)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(mx + 6 + cam.x * miniScale, my + 6 + cam.y * miniScale, W * miniScale, H * miniScale);
+  for (let i = boats.length - 1; i >= 0; i--) {
+    const b = boats[i];
+    ctx.fillStyle = b.color;
+    ctx.beginPath();
+    ctx.arc(mx + 6 + b.x * miniScale, my + 6 + b.y * miniScale, i === ME ? 4 : 3, 0, TAU);
+    ctx.fill();
+    if (i === ME) { ctx.strokeStyle = '#EDF4F7'; ctx.stroke(); }
+  }
+}
 
 // ---------------------------------------------------------------- rendering
 let perf = 0; // animation clock (runs even in menus)
@@ -695,6 +782,7 @@ function resetRace() {
   raceTime = 0; lastBeep = -1; finishShownAt = null;
   countT = 3.6;
   state = 'countdown';
+  updateCamera(0, true);
   showModal(null);
 }
 
@@ -768,10 +856,13 @@ let currentTrackIdx = 0;
 function selectTrack(i, save = true) {
   currentTrackIdx = i;
   T = built[i];
+  TOTAL_LAPS = T.def.laps || 3;
   marqueeSub.textContent = `SUPER HARBOR SPRINT · ${T.def.name.toUpperCase()} · ${TOTAL_LAPS} LAPS`;
   for (const el of grid.children)
     el.classList.toggle('selected', +el.dataset.i === i);
   paintScene();
+  buildMinimap();
+  updateCamera(0, true);
   if (save) try { localStorage.setItem('lanchas-track', String(i)); } catch (e) {}
 }
 
@@ -783,20 +874,23 @@ TRACKS.forEach((def, i) => {
   const mini = document.createElement('canvas');
   mini.width = 150; mini.height = 96;
   const mg = mini.getContext('2d');
-  const s = 0.15;
+  const dw = def.w || 1000, dh = def.h || 640;
+  const s = Math.min(150 / dw, 96 / dh);
+  const ox = (150 - dw * s) / 2, oy = (96 - dh * s) / 2;
   mg.fillStyle = def.palette.land;
   mg.fillRect(0, 0, 150, 96);
   mg.save();
+  mg.translate(ox, oy);
   mg.scale(s, s);
   mg.lineJoin = mg.lineCap = 'round';
-  mg.strokeStyle = def.palette.shore; mg.lineWidth = (def.half + 9) * 2;
+  mg.strokeStyle = def.palette.shore; mg.lineWidth = Math.max((def.half + 9) * 2, 7 / s);
   mg.stroke(built[i].centerPath);
-  mg.strokeStyle = def.palette.water[1]; mg.lineWidth = def.half * 2;
+  mg.strokeStyle = def.palette.water[1]; mg.lineWidth = Math.max(def.half * 2, 5 / s);
   mg.stroke(built[i].centerPath);
   mg.restore();
   const sp = built[i].pts[built[i].startIdx];
   mg.fillStyle = '#EDF4F7';
-  mg.fillRect(sp.x * s - 2, sp.y * s - 2, 4, 4);
+  mg.fillRect(ox + sp.x * s - 2, oy + sp.y * s - 2, 4, 4);
   card.appendChild(mini);
   const nm = document.createElement('span');
   nm.className = 'track-name';
@@ -1322,13 +1416,17 @@ function frame(now) {
   stepParts(dt);
 
   // ---- render ----
+  updateCamera(dt, false);
   ctx.setTransform(RES, 0, 0, RES, 0, 0);
-  ctx.drawImage(bg, 0, 0, W, H);
+  ctx.drawImage(bg, cam.x * BGR, cam.y * BGR, W * BGR, H * BGR, 0, 0, W, H);
+  ctx.setTransform(RES, 0, 0, RES, -cam.x * RES, -cam.y * RES);
   drawWater();
   drawWhirls();
   drawParts();
   drawBuoys();
   if (state !== 'menu' && boats.length) for (const b of [...boats].reverse()) drawBoat(b);
+  ctx.setTransform(RES, 0, 0, RES, 0, 0);
+  drawMinimap();
   if (state === 'countdown') {
     const n = Math.ceil(countT - 0.6);
     drawCountdown(n >= 1 ? String(n) : 'GO!');
