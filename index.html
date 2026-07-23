@@ -15,7 +15,7 @@
       <h1>LANCHAS</h1>
       <span class="flag flip">⚑</span>
     </div>
-    <p class="marquee-sub">SUPER&nbsp;HARBOR&nbsp;SPRINT&nbsp;·&nbsp;3&nbsp;LAPS</p>
+    <p class="marquee-sub" id="marquee-sub">SUPER&nbsp;HARBOR&nbsp;SPRINT&nbsp;·&nbsp;3&nbsp;LAPS</p>
     <button id="btn-mute" class="mute-btn" type="button" aria-label="Toggle sound">SOUND ON</button>
   </header>
 
@@ -31,16 +31,14 @@
 
     <!-- Start modal -->
     <div class="overlay" id="modal-start">
-      <div class="modal">
+      <div class="modal modal-wide">
         <h2>Race day at the harbor</h2>
-        <p>Three laps around the bay. Watch the buoys, dodge the rocks,
-           and stay clear of the whirlpool — the current does not forgive.</p>
-        <ul class="rules">
-          <li><b>Throttle</b> — W or ↑</li>
-          <li><b>Steer</b> — A / D or ← / →</li>
-          <li><b>Brake / reverse</b> — S or ↓</li>
-          <li><b>Pause</b> — Esc</li>
-        </ul>
+        <p>Pick your water, then run three laps. Buoys and rocks bounce,
+           whirlpools spin — the current does not forgive.</p>
+        <div class="track-grid" id="track-grid"></div>
+        <p class="controls-hint">
+          <b>W/↑</b> throttle · <b>A D/← →</b> steer · <b>S/↓</b> brake · <b>Esc</b> pause
+        </p>
         <button class="btn" id="btn-start" type="button">Start race</button>
       </div>
     </div>
@@ -66,7 +64,10 @@
           <thead><tr><th></th><th>Boat</th><th>Result</th></tr></thead>
           <tbody></tbody>
         </table>
-        <button class="btn" id="btn-restart" type="button">Race again</button>
+        <div class="btn-row">
+          <button class="btn" id="btn-restart" type="button">Race again</button>
+          <button class="btn btn-quiet" id="btn-change-track" type="button">Change track</button>
+        </div>
       </div>
     </div>
   </section>

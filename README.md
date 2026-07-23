@@ -18,6 +18,18 @@ e.g. `npx http-server . -p 8137`). The game scales to fill the window.
 | S / ↓ | Brake / reverse |
 | Esc | Pause |
 
+## Tracks
+
+Pick a circuit from the start screen (mini-map previews included; your choice
+is remembered):
+
+| Track | Character |
+|-------|-----------|
+| **Bahía** | The classic bay — medium width, one mean S-bend, a whirlpool |
+| **Laguna** | Wide, fast tropical oval — but the lagoon spins twice |
+| **Río Bravo** | Narrow canyon river strewn with rocks |
+| **Puerto Viejo** | Tight concrete harbor with chicanes and floating cargo |
+
 ## Features
 
 - **Whole-track view** — classic Super Sprint presentation, one screen, 3 laps

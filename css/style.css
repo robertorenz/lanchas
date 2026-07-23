@@ -167,6 +167,8 @@ canvas {
   padding: 26px 30px 30px;
   box-shadow: 0 18px 50px rgba(0, 0, 0, .6);
   text-align: center;
+  max-height: calc(100% - 32px);
+  overflow-y: auto;
 }
 .modal h2 {
   font-family: var(--display);
@@ -177,16 +179,50 @@ canvas {
 }
 .modal p { color: #B9CBD8; font-size: 15px; margin-bottom: 16px; }
 
-.rules {
-  list-style: none;
-  text-align: left;
-  margin: 0 auto 20px;
-  width: fit-content;
-  color: #B9CBD8;
-  font-size: 14px;
+.modal-wide { width: min(560px, calc(100% - 40px)); }
+
+.track-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
 }
-.rules li { padding: 3px 0; }
-.rules b { color: var(--foam); font-weight: 600; }
+.track-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 8px 12px;
+  background: #0D2233;
+  border: 2px solid var(--panel-edge);
+  border-radius: 10px;
+  cursor: pointer;
+  color: inherit;
+  font-family: inherit;
+}
+.track-card:hover { border-color: var(--dim); }
+.track-card.selected {
+  border-color: var(--red);
+  box-shadow: 0 0 0 1px var(--red);
+  background: #12293C;
+}
+.track-card:focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; }
+.track-card canvas {
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+.track-name {
+  font-family: var(--display);
+  font-size: 15px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--sand);
+}
+.track-blurb { font-size: 12px; color: var(--dim); line-height: 1.35; }
+
+.controls-hint { font-size: 13px; color: var(--dim); }
+.controls-hint b { color: var(--foam); font-weight: 600; }
 
 .btn {
   font-family: var(--display);

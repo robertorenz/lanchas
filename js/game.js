@@ -1,6 +1,6 @@
 /* LANCHAS — Harbor Sprint
    Super Sprint-style top-down speedboat racing. Whole circuit on one screen,
-   drifty water physics, buoys, rocks, a whirlpool, 3 AI boats, 3 laps. */
+   drifty water physics, hazards, 3 AI boats, 3 laps, multiple tracks. */
 
 (() => {
 'use strict';
@@ -30,23 +30,91 @@ const ctx = cvs.getContext('2d');
 const W = 1000, H = 640;   // logical playfield size; RES scales the backing store
 let RES = 1;
 
-// ---------------------------------------------------------------- track
-// Closed Catmull-Rom loop, clockwise. The (795,470)->(625,430)->(520,555)
-// kink is the S-bend that makes the bottom half of the circuit technical.
-const CTRL = [
-  [520, 85], [730, 115], [880, 215], [905, 380], [795, 470], [625, 430],
-  [520, 555], [355, 540], [200, 470], [125, 330], [175, 175], [350, 105]
-];
-const HALF = 42;          // half-width of the water channel
-const HULL_R = 9;         // boat collision radius
+const HULL_R = 9;
 const TOTAL_LAPS = 3;
 
-const track = (() => {
+// ---------------------------------------------------------------- track roster
+// ctrl: closed Catmull-Rom loop, clockwise. t values are fractions of a lap
+// measured from the start line; off is the sideways offset from centerline.
+const TRACKS = [
+  {
+    id: 'bahia', name: 'Bahía', blurb: 'The classic bay. One mean S-bend.',
+    half: 42, startNear: [455, 550], decor: 'palms',
+    ctrl: [[520, 85], [730, 115], [880, 215], [905, 380], [795, 470], [625, 430],
+           [520, 555], [355, 540], [200, 470], [125, 330], [175, 175], [350, 105]],
+    palette: {
+      land: '#DCC894', shore: '#C3AA72',
+      water: ['#14567F', '#1F7FB5', '#2B8FC4'],
+      mottle: ['rgba(158,166,110,.35)', 'rgba(201,181,126,.5)'], tree: '#4E7C4A'
+    },
+    buoys: [{ t: .08, off: 18 }, { t: .20, off: -16 }, { t: .38, off: 15 },
+            { t: .50, off: -18 }, { t: .72, off: 16 }, { t: .86, off: -14 }],
+    rocks: [{ t: .30, off: 24, r: 12 }, { t: .45, off: -22, r: 10 },
+            { t: .78, off: 21, r: 13 }, { t: .93, off: -24, r: 11 }],
+    crates: [], whirls: [{ t: .615, off: 0, r: 34 }]
+  },
+  {
+    id: 'laguna', name: 'Laguna', blurb: 'Wide and fast — but the lagoon spins twice.',
+    half: 48, startNear: [470, 558], decor: 'palms',
+    ctrl: [[500, 90], [720, 110], [880, 200], [910, 340], [850, 470], [680, 550],
+           [480, 560], [290, 530], [150, 430], [110, 290], [180, 160], [330, 95]],
+    palette: {
+      land: '#E2D8A8', shore: '#CDBB80',
+      water: ['#0F6E86', '#1D96AC', '#2BA9BE'],
+      mottle: ['rgba(150,170,105,.4)', 'rgba(205,187,128,.55)'], tree: '#3F7C4E'
+    },
+    buoys: [{ t: .07, off: 22 }, { t: .19, off: -22 }, { t: .31, off: 22 },
+            { t: .43, off: -22 }, { t: .55, off: 22 }, { t: .67, off: -22 },
+            { t: .79, off: 22 }, { t: .91, off: -22 }],
+    rocks: [{ t: .40, off: 30, r: 11 }, { t: .90, off: -30, r: 12 }],
+    crates: [], whirls: [{ t: .28, off: 10, r: 30 }, { t: .65, off: -8, r: 30 }]
+  },
+  {
+    id: 'rio', name: 'Río Bravo', blurb: 'A narrow canyon river strewn with rocks.',
+    half: 38, startNear: [105, 215], decor: 'pines',
+    ctrl: [[150, 140], [320, 90], [480, 170], [620, 90], [800, 120], [900, 240],
+           [870, 380], [920, 500], [760, 560], [600, 480], [440, 560], [280, 520],
+           [130, 430], [90, 280]],
+    palette: {
+      land: '#A98F66', shore: '#8F7750',
+      water: ['#0F5068', '#177690', '#2088A2'],
+      mottle: ['rgba(122,101,66,.45)', 'rgba(96,116,62,.35)'], tree: '#3E6B44'
+    },
+    buoys: [{ t: .10, off: 14 }, { t: .35, off: -14 }, { t: .60, off: 14 },
+            { t: .85, off: -14 }],
+    rocks: [{ t: .15, off: -20, r: 11 }, { t: .22, off: 18, r: 10 },
+            { t: .30, off: -16, r: 12 }, { t: .48, off: 20, r: 10 },
+            { t: .55, off: -18, r: 13 }, { t: .70, off: 16, r: 10 },
+            { t: .90, off: -18, r: 11 }],
+    crates: [], whirls: [{ t: .42, off: 0, r: 26 }]
+  },
+  {
+    id: 'puerto', name: 'Puerto Viejo', blurb: 'Tight concrete harbor. Mind the cargo.',
+    half: 36, startNear: [280, 535], decor: 'port',
+    ctrl: [[170, 110], [450, 90], [560, 180], [700, 100], [880, 130], [900, 280],
+           [790, 330], [900, 430], [850, 560], [600, 540], [500, 430], [380, 545],
+           [170, 520], [120, 350], [200, 250], [120, 180]],
+    palette: {
+      land: '#9AA3AA', shore: '#79838C',
+      water: ['#123F55', '#175F7E', '#1F7292'],
+      mottle: ['rgba(70,80,90,.30)', 'rgba(126,136,146,.4)'], tree: '#4E6B57'
+    },
+    buoys: [{ t: .08, off: 14 }, { t: .20, off: -14 }, { t: .33, off: 12 },
+            { t: .50, off: -14 }, { t: .66, off: 12 }, { t: .80, off: -12 }],
+    rocks: [],
+    crates: [{ t: .12, off: -18, r: 10 }, { t: .28, off: 16, r: 10 },
+             { t: .45, off: -16, r: 10 }, { t: .62, off: 18, r: 10 },
+             { t: .88, off: -14, r: 10 }],
+    whirls: []
+  }
+];
+
+function buildTrack(def) {
   const pts = [];
-  const n = CTRL.length, SEG = 50;
+  const n = def.ctrl.length, SEG = Math.round(600 / n);
   for (let i = 0; i < n; i++) {
-    const p0 = CTRL[(i - 1 + n) % n], p1 = CTRL[i],
-          p2 = CTRL[(i + 1) % n], p3 = CTRL[(i + 2) % n];
+    const p0 = def.ctrl[(i - 1 + n) % n], p1 = def.ctrl[i],
+          p2 = def.ctrl[(i + 1) % n], p3 = def.ctrl[(i + 2) % n];
     for (let s = 0; s < SEG; s++) {
       const u = s / SEG, u2 = u * u, u3 = u2 * u;
       pts.push({
@@ -55,52 +123,55 @@ const track = (() => {
       });
     }
   }
-  for (let i = 0; i < pts.length; i++) {
-    const a = pts[(i - 1 + pts.length) % pts.length], b = pts[(i + 1) % pts.length];
+  const NN = pts.length;
+  for (let i = 0; i < NN; i++) {
+    const a = pts[(i - 1 + NN) % NN], b = pts[(i + 1) % NN];
     const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1;
-    pts[i].tx = dx / d; pts[i].ty = dy / d;   // tangent (race direction)
-    pts[i].nx = -dy / d; pts[i].ny = dx / d;  // normal (left of travel)
+    pts[i].tx = dx / d; pts[i].ty = dy / d;
+    pts[i].nx = -dy / d; pts[i].ny = dx / d;
   }
-  return pts;
-})();
-const N = track.length;
+  let startIdx = 0, bd = Infinity;
+  for (let i = 0; i < NN; i++) {
+    const d = dist2(def.startNear[0], def.startNear[1], pts[i].x, pts[i].y);
+    if (d < bd) { bd = d; startIdx = i; }
+  }
+  const at = (t, off) => {
+    const p = pts[(startIdx + Math.round(t * NN)) % NN];
+    return { x: p.x + p.nx * off, y: p.y + p.ny * off };
+  };
+  const centerPath = new Path2D();
+  centerPath.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < NN; i++) centerPath.lineTo(pts[i].x, pts[i].y);
+  centerPath.closePath();
+  return {
+    def, pts, N: NN, startIdx, half: def.half, centerPath,
+    buoys: def.buoys.map((b, i) => ({ ...at(b.t, b.off), r: 7, phase: i * 1.7 })),
+    rocks: def.rocks.map(r => ({ ...at(r.t, r.off), r: r.r })),
+    crates: def.crates.map((c, i) => ({ ...at(c.t, c.off), r: c.r, rot: i * 0.9 })),
+    whirls: def.whirls.map(w => ({ ...at(w.t, w.off), r: w.r }))
+  };
+}
+
+const built = TRACKS.map(buildTrack);
+let T = built[0];
 
 function nearestIdx(x, y, hint) {
+  const pts = T.pts, NN = T.N;
   let best = 0, bd = Infinity;
   if (hint == null) {
-    for (let i = 0; i < N; i++) {
-      const d = dist2(x, y, track[i].x, track[i].y);
+    for (let i = 0; i < NN; i++) {
+      const d = dist2(x, y, pts[i].x, pts[i].y);
       if (d < bd) { bd = d; best = i; }
     }
   } else {
     for (let k = -45; k <= 45; k++) {
-      const i = (hint + k + N * 2) % N;
-      const d = dist2(x, y, track[i].x, track[i].y);
+      const i = (hint + k + NN * 2) % NN;
+      const d = dist2(x, y, pts[i].x, pts[i].y);
       if (d < bd) { bd = d; best = i; }
     }
   }
   return best;
 }
-
-const startIdx = nearestIdx(455, 550, null); // on the bottom straight
-
-// ---------------------------------------------------------------- hazards
-const atT = t => (startIdx + Math.round(t * N)) % N;
-function trackPoint(t, off) {
-  const p = track[atT(t)];
-  return { x: p.x + p.nx * off, y: p.y + p.ny * off };
-}
-const buoys = [
-  { t: .08, off:  18 }, { t: .20, off: -16 }, { t: .38, off:  15 },
-  { t: .50, off: -18 }, { t: .72, off:  16 }, { t: .86, off: -14 }
-].map((b, i) => ({ ...trackPoint(b.t, b.off), r: 7, phase: i * 1.7 }));
-
-const rocks = [
-  { t: .30, off:  24, r: 12 }, { t: .45, off: -22, r: 10 },
-  { t: .78, off:  21, r: 13 }, { t: .93, off: -24, r: 11 }
-].map(r => ({ ...trackPoint(r.t, r.off), r: r.r }));
-
-const whirl = { ...trackPoint(.615, 0), r: 34 };
 
 // ---------------------------------------------------------------- audio
 const snd = {
@@ -176,14 +247,14 @@ let boats = [];
 function spawnBoats() {
   boats = ROSTER.map((r, i) => {
     const row = Math.floor(i / 2), lane = (i % 2 === 0 ? 1 : -1) * 14;
-    const idx = (startIdx - 12 - row * 11 + N) % N;
-    const p = track[idx];
+    const idx = (T.startIdx - 12 - row * 11 + T.N) % T.N;
+    const p = T.pts[idx];
     return {
       ...r,
       x: p.x + p.nx * lane, y: p.y + p.ny * lane,
       a: Math.atan2(p.ty, p.tx),
       vx: 0, vy: 0, steer: 0, throttle: 0,
-      idx, prog: -12 - row * 11,
+      idx, prevIdx: idx, prog: -12 - row * 11,
       lapsDone: 0, lapStamp: 0, bestLap: null,
       finished: false, finishTime: null,
       grindCool: 0, bumpCool: 0, wob: Math.random() * TAU
@@ -196,23 +267,22 @@ const ACCEL = 265, REV_ACCEL = 130, F_DRAG = 1.12, L_DRAG = 4.6, TURN = 2.7;
 
 function driveAI(b, dt, playerProg) {
   const look = 13 + Math.hypot(b.vx, b.vy) * 0.055;
-  const tp = track[(b.idx + Math.round(look)) % N];
-  const wobble = Math.sin(perf * .7 + b.wob) * 6; // slight lane variation
+  const tp = T.pts[(b.idx + Math.round(look)) % T.N];
+  const amp = clamp(T.half - 34, 3, 9); // less lane wandering on narrow tracks
+  const wobble = Math.sin(perf * .7 + b.wob) * amp;
   const tx = tp.x + tp.nx * wobble, ty = tp.y + tp.ny * wobble;
   const diff = wrapAng(Math.atan2(ty - b.y, tx - b.x) - b.a);
   b.steer = clamp(diff * 3, -1, 1);
   // rubber-band: trail the player a little harder, ease off when ahead
-  const gap = clamp((playerProg - b.prog) / N, -0.5, 0.5);
+  const gap = clamp((playerProg - b.prog) / T.N, -0.5, 0.5);
   const eff = clamp(b.skill + gap * 0.16, 0.8, 1.02);
   b.throttle = (Math.abs(diff) > 1.1 ? 0.55 : 1) * eff;
 }
 
-function stepBoat(b, dt, spray) {
-  // steering (needs way to grip: turn authority scales with speed)
+function stepBoat(b, dt) {
   const spd = Math.hypot(b.vx, b.vy);
   b.a = wrapAng(b.a + TURN * b.steer * clamp(spd / 90, 0, 1) * dt);
 
-  // thrust along heading
   const th = b.throttle;
   if (th > 0) { b.vx += Math.cos(b.a) * ACCEL * th * dt; b.vy += Math.sin(b.a) * ACCEL * th * dt; }
   else if (th < 0) { b.vx += Math.cos(b.a) * REV_ACCEL * th * dt; b.vy += Math.sin(b.a) * REV_ACCEL * th * dt; }
@@ -231,10 +301,10 @@ function stepBoat(b, dt, spray) {
 
   // channel bounds
   b.idx = nearestIdx(b.x, b.y, b.idx);
-  const p = track[b.idx];
+  const p = T.pts[b.idx];
   const dx = b.x - p.x, dy = b.y - p.y;
   const d = Math.hypot(dx, dy);
-  const lim = HALF - HULL_R + 2;
+  const lim = T.half - HULL_R + 2;
   if (d > lim) {
     const nx = dx / d, ny = dy / d;
     b.x = p.x + nx * lim; b.y = p.y + ny * lim;
@@ -242,7 +312,7 @@ function stepBoat(b, dt, spray) {
     if (vn > 0) { b.vx -= vn * 1.5 * nx; b.vy -= vn * 1.5 * ny; }
     b.vx *= 0.97; b.vy *= 0.97;
     if (b.grindCool <= 0 && spd > 60) {
-      spray(b.x + nx * 6, b.y + ny * 6, 5, '#EDF4F7');
+      spray(b.x + nx * 6, b.y + ny * 6, 5);
       if (!b.ai) snd.thud();
       b.grindCool = .35;
     }
@@ -251,7 +321,7 @@ function stepBoat(b, dt, spray) {
   b.bumpCool -= dt;
 
   // hazards
-  for (const list of [buoys, rocks]) {
+  for (const list of [T.buoys, T.rocks, T.crates]) {
     for (const o of list) {
       const ox = b.x - o.x, oy = b.y - o.y;
       const od = Math.hypot(ox, oy), min = o.r + HULL_R;
@@ -262,7 +332,7 @@ function stepBoat(b, dt, spray) {
         if (vn < 0) { b.vx -= vn * 1.7 * nx; b.vy -= vn * 1.7 * ny; }
         b.vx *= 0.82; b.vy *= 0.82;
         if (b.bumpCool <= 0) {
-          spray(b.x, b.y, 8, '#EDF4F7');
+          spray(b.x, b.y, 8);
           if (!b.ai) snd.thud();
           b.bumpCool = .3;
         }
@@ -270,12 +340,12 @@ function stepBoat(b, dt, spray) {
     }
   }
 
-  // whirlpool: drags you sideways and bleeds speed
-  {
-    const wx = b.x - whirl.x, wy = b.y - whirl.y;
+  // whirlpools: drag you sideways and bleed speed
+  for (const wh of T.whirls) {
+    const wx = b.x - wh.x, wy = b.y - wh.y;
     const wd = Math.hypot(wx, wy);
-    if (wd < whirl.r + 14) {
-      const k = 1 - wd / (whirl.r + 14);
+    if (wd < wh.r + 14) {
+      const k = 1 - wd / (wh.r + 14);
       b.vx += (-wy / (wd || 1)) * 260 * k * dt;
       b.vy += ( wx / (wd || 1)) * 260 * k * dt;
       b.vx *= 1 - 0.9 * k * dt;
@@ -283,27 +353,26 @@ function stepBoat(b, dt, spray) {
       b.a = wrapAng(b.a + 1.4 * k * dt);
     }
   }
-
 }
 
 // lap progress: accumulate the wrapped delta of the nearest-sample index
 function updateProgress(b) {
   let d = b.idx - b.prevIdx;
-  if (d > N / 2) d -= N;
-  if (d < -N / 2) d += N;
+  if (d > T.N / 2) d -= T.N;
+  if (d < -T.N / 2) d += T.N;
   b.prog += d;
   b.prevIdx = b.idx;
 }
 
 // ---------------------------------------------------------------- particles
 const parts = [];
-function spray(x, y, n, color) {
+function spray(x, y, n) {
   for (let i = 0; i < n && parts.length < 420; i++) {
     const a = Math.random() * TAU, s = 20 + Math.random() * 70;
     parts.push({
       x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
       life: 0, max: .35 + Math.random() * .3,
-      r: 1.5 + Math.random() * 2.5, color
+      r: 1.5 + Math.random() * 2.5, wake: false
     });
   }
 }
@@ -316,7 +385,7 @@ function wake(b) {
     vx: -Math.cos(b.a) * 14 + (Math.random() - .5) * 10,
     vy: -Math.sin(b.a) * 14 + (Math.random() - .5) * 10,
     life: 0, max: .8 + Math.random() * .5,
-    r: 2 + Math.random() * 2, color: 'wake'
+    r: 2 + Math.random() * 2, wake: true
   });
 }
 function stepParts(dt) {
@@ -332,53 +401,61 @@ function stepParts(dt) {
 // ---------------------------------------------------------------- static scene
 const bg = document.createElement('canvas');
 bg.width = W; bg.height = H;
+
 function paintScene() {
   const g = bg.getContext('2d');
   g.setTransform(RES, 0, 0, RES, 0, 0);
   const rnd = mulberry32(20260722);
+  const pal = T.def.palette;
+  const pts = T.pts, NN = T.N;
 
-  // land
-  g.fillStyle = '#DCC894';
+  g.fillStyle = pal.land;
   g.fillRect(0, 0, W, H);
 
-  // dune / grass mottling (kept off the water)
+  const offChannel = (x, y, margin) => {
+    let bd = Infinity;
+    for (let i = 0; i < NN; i += 4) {
+      const d = dist2(x, y, pts[i].x, pts[i].y);
+      if (d < bd) bd = d;
+    }
+    return bd > margin * margin;
+  };
+
+  // land mottling
   for (let i = 0; i < 260; i++) {
     const x = rnd() * W, y = rnd() * H;
-    const near = track[nearestIdx(x, y, null)];
-    if (dist2(x, y, near.x, near.y) < (HALF + 26) ** 2) continue;
-    g.fillStyle = rnd() < .5 ? 'rgba(158,166,110,.35)' : 'rgba(201,181,126,.5)';
+    if (!offChannel(x, y, T.half + 26)) continue;
+    g.fillStyle = pal.mottle[rnd() < .5 ? 0 : 1];
     g.beginPath();
-    g.ellipse(x, y, 6 + rnd() * 18, 4 + rnd() * 10, rnd() * TAU, 0, TAU);
+    if (T.def.decor === 'port') {
+      g.rect(x - 14, y - 8, 14 + rnd() * 22, 8 + rnd() * 14); // concrete plates
+    } else {
+      g.ellipse(x, y, 6 + rnd() * 18, 4 + rnd() * 10, rnd() * TAU, 0, TAU);
+    }
     g.fill();
   }
 
-  const path = new Path2D();
-  path.moveTo(track[0].x, track[0].y);
-  for (let i = 1; i < N; i++) path.lineTo(track[i].x, track[i].y);
-  path.closePath();
   g.lineJoin = g.lineCap = 'round';
-
-  // wet-sand shoreline, then water, then shallower center
-  g.strokeStyle = '#C3AA72'; g.lineWidth = (HALF + 9) * 2; g.stroke(path);
-  g.strokeStyle = '#14567F'; g.lineWidth = HALF * 2;        g.stroke(path);
-  g.strokeStyle = '#1F7FB5'; g.lineWidth = HALF * 2 - 16;   g.stroke(path);
-  g.strokeStyle = '#2B8FC4'; g.lineWidth = HALF * 2 - 40;   g.stroke(path);
+  g.strokeStyle = pal.shore;    g.lineWidth = (T.half + 9) * 2;  g.stroke(T.centerPath);
+  g.strokeStyle = pal.water[0]; g.lineWidth = T.half * 2;        g.stroke(T.centerPath);
+  g.strokeStyle = pal.water[1]; g.lineWidth = T.half * 2 - 16;   g.stroke(T.centerPath);
+  g.strokeStyle = pal.water[2]; g.lineWidth = T.half * 2 - 40;   g.stroke(T.centerPath);
 
   // start / finish checkers across the channel
-  const sp = track[startIdx];
+  const sp = pts[T.startIdx];
   g.save();
   g.translate(sp.x, sp.y);
   g.rotate(Math.atan2(sp.ny, sp.nx));
-  const sq = 7;
+  const sq = 7, cols = Math.ceil(T.half / sq);
   for (let r = 0; r < 2; r++)
-    for (let c = -6; c < 6; c++) {
+    for (let c = -cols; c < cols; c++) {
       g.fillStyle = (r + c) % 2 === 0 ? '#EDF4F7' : '#12222E';
       g.fillRect(c * sq, -sq + r * sq, sq, sq);
     }
   g.restore();
 
-  // rocks (static hazards, painted once)
-  for (const r of rocks) {
+  // rocks
+  for (const r of T.rocks) {
     g.fillStyle = 'rgba(9,32,46,.35)';
     g.beginPath(); g.ellipse(r.x + 2, r.y + 3, r.r, r.r * .8, 0, 0, TAU); g.fill();
     g.fillStyle = '#7E858B';
@@ -393,30 +470,65 @@ function paintScene() {
     g.beginPath(); g.ellipse(r.x - r.r * .25, r.y - r.r * .3, r.r * .45, r.r * .3, -.5, 0, TAU); g.fill();
   }
 
-  // a small dock on the infield near the start
-  const dp = trackPoint(0.02, -HALF - 4);
-  g.save();
-  g.translate(dp.x, dp.y);
-  g.rotate(Math.atan2(track[atT(0.02)].ty, track[atT(0.02)].tx));
-  g.fillStyle = '#8A6B48'; g.fillRect(-26, -6, 52, 16);
-  g.fillStyle = '#A07E56';
-  for (let i = -24; i < 26; i += 8) g.fillRect(i, -6, 6, 16);
-  g.restore();
+  // floating cargo crates
+  for (const c of T.crates) {
+    g.save();
+    g.translate(c.x, c.y);
+    g.rotate(c.rot);
+    g.fillStyle = 'rgba(9,32,46,.35)';
+    g.fillRect(-c.r + 2, -c.r + 3, c.r * 2, c.r * 2);
+    g.fillStyle = '#A5793F';
+    g.fillRect(-c.r, -c.r, c.r * 2, c.r * 2);
+    g.strokeStyle = '#7C5A2C'; g.lineWidth = 2;
+    g.strokeRect(-c.r + 1, -c.r + 1, c.r * 2 - 2, c.r * 2 - 2);
+    g.beginPath(); g.moveTo(-c.r, -c.r); g.lineTo(c.r, c.r);
+    g.moveTo(c.r, -c.r); g.lineTo(-c.r, c.r); g.stroke();
+    g.restore();
+  }
 
-  // palms on land
-  for (const [px, py] of [[70, 90], [935, 90], [60, 580], [945, 590], [510, 300]]) {
-    const near = track[nearestIdx(px, py, null)];
-    if (dist2(px, py, near.x, near.y) < (HALF + 30) ** 2) continue;
-    g.fillStyle = 'rgba(9,32,46,.25)';
-    g.beginPath(); g.ellipse(px + 4, py + 5, 14, 6, 0, 0, TAU); g.fill();
-    g.strokeStyle = '#8A6B48'; g.lineWidth = 4;
-    g.beginPath(); g.moveTo(px, py + 4); g.lineTo(px + 3, py - 10); g.stroke();
-    g.fillStyle = '#4E7C4A';
-    for (let k = 0; k < 6; k++) {
-      const a = k / 6 * TAU;
-      g.beginPath();
-      g.ellipse(px + 3 + Math.cos(a) * 9, py - 12 + Math.sin(a) * 5, 9, 3.5, a, 0, TAU);
-      g.fill();
+  // a small dock on the shore near the start
+  {
+    const p = pts[(T.startIdx + Math.round(0.02 * NN)) % NN];
+    const dp = { x: p.x - p.nx * (T.half + 4), y: p.y - p.ny * (T.half + 4) };
+    g.save();
+    g.translate(dp.x, dp.y);
+    g.rotate(Math.atan2(p.ty, p.tx));
+    g.fillStyle = '#8A6B48'; g.fillRect(-26, -6, 52, 16);
+    g.fillStyle = '#A07E56';
+    for (let i = -24; i < 26; i += 8) g.fillRect(i, -6, 6, 16);
+    g.restore();
+  }
+
+  // trees
+  if (T.def.decor !== 'port') {
+    let planted = 0, tries = 0;
+    while (planted < 8 && tries++ < 120) {
+      const px = 40 + rnd() * (W - 80), py = 40 + rnd() * (H - 80);
+      if (!offChannel(px, py, T.half + 34)) continue;
+      planted++;
+      g.fillStyle = 'rgba(9,32,46,.25)';
+      g.beginPath(); g.ellipse(px + 4, py + 5, 14, 6, 0, 0, TAU); g.fill();
+      if (T.def.decor === 'pines') {
+        g.fillStyle = '#6B4F33';
+        g.fillRect(px - 2, py - 2, 4, 8);
+        g.fillStyle = pal.tree;
+        for (let k = 3; k > 0; k--) {
+          const w2 = 5 + k * 4, yy = py - 24 + k * 7;
+          g.beginPath();
+          g.moveTo(px, yy - 10); g.lineTo(px - w2, yy); g.lineTo(px + w2, yy);
+          g.closePath(); g.fill();
+        }
+      } else {
+        g.strokeStyle = '#8A6B48'; g.lineWidth = 4;
+        g.beginPath(); g.moveTo(px, py + 4); g.lineTo(px + 3, py - 10); g.stroke();
+        g.fillStyle = pal.tree;
+        for (let k = 0; k < 6; k++) {
+          const a = k / 6 * TAU;
+          g.beginPath();
+          g.ellipse(px + 3 + Math.cos(a) * 9, py - 12 + Math.sin(a) * 5, 9, 3.5, a, 0, TAU);
+          g.fill();
+        }
+      }
     }
   }
 }
@@ -437,11 +549,6 @@ function applyResolution() {
 }
 window.addEventListener('resize', () => applyResolution());
 
-const centerPath = new Path2D();
-centerPath.moveTo(track[0].x, track[0].y);
-for (let i = 1; i < N; i++) centerPath.lineTo(track[i].x, track[i].y);
-centerPath.closePath();
-
 // ---------------------------------------------------------------- rendering
 let perf = 0; // animation clock (runs even in menus)
 
@@ -452,38 +559,40 @@ function drawWater() {
   ctx.lineWidth = 3;
   ctx.setLineDash([16, 110]);
   ctx.lineDashOffset = -perf * 26;
-  ctx.stroke(centerPath);
+  ctx.stroke(T.centerPath);
   ctx.strokeStyle = 'rgba(120,196,226,.22)';
   ctx.setLineDash([10, 150]);
   ctx.lineDashOffset = -perf * 38 - 60;
   ctx.lineWidth = 2;
-  ctx.stroke(centerPath);
+  ctx.stroke(T.centerPath);
   ctx.restore();
 }
 
-function drawWhirl() {
-  ctx.save();
-  ctx.translate(whirl.x, whirl.y);
-  ctx.rotate(perf * 1.8);
-  ctx.strokeStyle = 'rgba(230,244,250,.5)';
-  ctx.lineWidth = 2.5;
-  for (let arm = 0; arm < 3; arm++) {
-    ctx.beginPath();
-    for (let s = 0; s <= 22; s++) {
-      const a = arm * TAU / 3 + s * .32;
-      const r = 3 + s * (whirl.r - 4) / 22;
-      const x = Math.cos(a) * r, y = Math.sin(a) * r;
-      s ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+function drawWhirls() {
+  for (const wh of T.whirls) {
+    ctx.save();
+    ctx.translate(wh.x, wh.y);
+    ctx.rotate(perf * 1.8);
+    ctx.strokeStyle = 'rgba(230,244,250,.5)';
+    ctx.lineWidth = 2.5;
+    for (let arm = 0; arm < 3; arm++) {
+      ctx.beginPath();
+      for (let s = 0; s <= 22; s++) {
+        const a = arm * TAU / 3 + s * .32;
+        const r = 3 + s * (wh.r - 4) / 22;
+        const x = Math.cos(a) * r, y = Math.sin(a) * r;
+        s ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      }
+      ctx.stroke();
     }
-    ctx.stroke();
+    ctx.fillStyle = 'rgba(10,40,60,.55)';
+    ctx.beginPath(); ctx.arc(0, 0, 7, 0, TAU); ctx.fill();
+    ctx.restore();
   }
-  ctx.fillStyle = 'rgba(10,40,60,.55)';
-  ctx.beginPath(); ctx.arc(0, 0, 7, 0, TAU); ctx.fill();
-  ctx.restore();
 }
 
 function drawBuoys() {
-  for (const b of buoys) {
+  for (const b of T.buoys) {
     const bob = Math.sin(perf * 2.1 + b.phase) * 1.6;
     ctx.fillStyle = 'rgba(9,32,46,.3)';
     ctx.beginPath(); ctx.ellipse(b.x + 2, b.y + 3, b.r + 1, b.r * .7, 0, 0, TAU); ctx.fill();
@@ -500,10 +609,8 @@ function drawBoat(b) {
   ctx.save();
   ctx.translate(b.x, b.y);
   ctx.rotate(b.a);
-  // shadow
   ctx.fillStyle = 'rgba(9,32,46,.3)';
   ctx.beginPath(); ctx.ellipse(1, 3, 13, 6, 0, 0, TAU); ctx.fill();
-  // hull
   ctx.fillStyle = b.color;
   ctx.beginPath();
   ctx.moveTo(15, 0);
@@ -513,12 +620,10 @@ function drawBoat(b) {
   ctx.quadraticCurveTo(8, 7, 15, 0);
   ctx.closePath(); ctx.fill();
   ctx.strokeStyle = 'rgba(9,32,46,.4)'; ctx.lineWidth = 1; ctx.stroke();
-  // deck stripe + cockpit
   ctx.fillStyle = b.trim;
   ctx.fillRect(-11, -1.4, 18, 2.8);
   ctx.fillStyle = '#12222E';
   ctx.beginPath(); ctx.ellipse(-2, 0, 4, 3, 0, 0, TAU); ctx.fill();
-  // motor
   ctx.fillStyle = '#22303A';
   ctx.fillRect(-15, -2.5, 4, 5);
   ctx.restore();
@@ -527,7 +632,7 @@ function drawBoat(b) {
 function drawParts() {
   for (const p of parts) {
     const k = 1 - p.life / p.max;
-    if (p.color === 'wake') {
+    if (p.wake) {
       ctx.fillStyle = `rgba(230,244,250,${(.5 * k).toFixed(3)})`;
       ctx.beginPath(); ctx.arc(p.x, p.y, p.r + (1 - k) * 6, 0, TAU); ctx.fill();
     } else {
@@ -571,7 +676,6 @@ let raceTime = 0, countT = 0, lastBeep = -1, finishShownAt = null;
 
 function resetRace() {
   spawnBoats();
-  for (const b of boats) b.prevIdx = b.idx;
   parts.length = 0;
   raceTime = 0; lastBeep = -1; finishShownAt = null;
   countT = 3.6;
@@ -594,7 +698,7 @@ function updateHud() {
 }
 
 function checkLaps(b) {
-  const done = Math.floor(b.prog / N);
+  const done = Math.floor(b.prog / T.N);
   if (done > b.lapsDone) {
     b.lapsDone = done;
     const lapTime = raceTime - b.lapStamp;
@@ -620,7 +724,7 @@ function showResults() {
   document.getElementById('finish-title').textContent =
     place === 1 ? 'Checkered flag — you win!' : `You finished ${ORD(place)}`;
   document.getElementById('finish-sub').textContent =
-    place === 1 ? 'Fastest lancha in the harbor today.'
+    place === 1 ? `Fastest lancha on ${T.def.name} today.`
                 : 'The podium slips away — take another run at it.';
   const tbody = modals.finish.querySelector('tbody');
   tbody.innerHTML = '';
@@ -636,6 +740,58 @@ function showResults() {
   });
   showModal('finish');
 }
+
+// ---------------------------------------------------------------- track select
+const marqueeSub = document.getElementById('marquee-sub');
+const grid = document.getElementById('track-grid');
+
+function selectTrack(i, save = true) {
+  T = built[i];
+  marqueeSub.textContent = `SUPER HARBOR SPRINT · ${T.def.name.toUpperCase()} · ${TOTAL_LAPS} LAPS`;
+  for (const el of grid.children)
+    el.classList.toggle('selected', +el.dataset.i === i);
+  paintScene();
+  if (save) try { localStorage.setItem('lanchas-track', String(i)); } catch (e) {}
+}
+
+TRACKS.forEach((def, i) => {
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'track-card';
+  card.dataset.i = i;
+  const mini = document.createElement('canvas');
+  mini.width = 150; mini.height = 96;
+  const mg = mini.getContext('2d');
+  const s = 0.15;
+  mg.fillStyle = def.palette.land;
+  mg.fillRect(0, 0, 150, 96);
+  mg.save();
+  mg.scale(s, s);
+  mg.lineJoin = mg.lineCap = 'round';
+  mg.strokeStyle = def.palette.shore; mg.lineWidth = (def.half + 9) * 2;
+  mg.stroke(built[i].centerPath);
+  mg.strokeStyle = def.palette.water[1]; mg.lineWidth = def.half * 2;
+  mg.stroke(built[i].centerPath);
+  mg.restore();
+  const sp = built[i].pts[built[i].startIdx];
+  mg.fillStyle = '#EDF4F7';
+  mg.fillRect(sp.x * s - 2, sp.y * s - 2, 4, 4);
+  card.appendChild(mini);
+  const nm = document.createElement('span');
+  nm.className = 'track-name';
+  nm.textContent = def.name;
+  const bl = document.createElement('span');
+  bl.className = 'track-blurb';
+  bl.textContent = def.blurb;
+  card.appendChild(nm);
+  card.appendChild(bl);
+  card.addEventListener('click', () => selectTrack(i));
+  grid.appendChild(card);
+});
+
+let savedTrack = 0;
+try { savedTrack = clamp(parseInt(localStorage.getItem('lanchas-track') || '0', 10) || 0, 0, TRACKS.length - 1); } catch (e) {}
+selectTrack(savedTrack, false);
 
 // ---------------------------------------------------------------- input
 const keys = {};
@@ -662,6 +818,10 @@ document.getElementById('btn-start').addEventListener('click', () => { snd.init(
 document.getElementById('btn-restart').addEventListener('click', resetRace);
 document.getElementById('btn-restart-pause').addEventListener('click', resetRace);
 document.getElementById('btn-resume').addEventListener('click', () => { state = 'racing'; showModal(null); });
+document.getElementById('btn-change-track').addEventListener('click', () => {
+  state = 'menu';
+  showModal('start');
+});
 
 const muteBtn = document.getElementById('btn-mute');
 muteBtn.textContent = snd.muted ? 'SOUND OFF' : 'SOUND ON';
@@ -688,7 +848,6 @@ function frame(now) {
     raceTime += dt;
     const player = boats[0];
 
-    // player controls (cut when finished — the boat glides in)
     if (!player.finished && state === 'racing') {
       player.throttle = (keys['w'] || keys['ArrowUp']) ? 1 :
                         (keys['s'] || keys['ArrowDown']) ? -1 : 0;
@@ -701,7 +860,7 @@ function frame(now) {
     for (const b of boats) {
       if (b.ai && !b.finished) driveAI(b, dt, player.prog);
       else if (b.ai) { b.throttle = 0; b.steer = 0; }
-      stepBoat(b, dt, spray);
+      stepBoat(b, dt);
       updateProgress(b);
       checkLaps(b);
       wake(b);
@@ -721,7 +880,7 @@ function frame(now) {
           if (rel < 0) {
             A.vx += rel * .55 * nx; A.vy += rel * .55 * ny;
             B.vx -= rel * .55 * nx; B.vy -= rel * .55 * ny;
-            spray((A.x + B.x) / 2, (A.y + B.y) / 2, 4, '#EDF4F7');
+            spray((A.x + B.x) / 2, (A.y + B.y) / 2, 4);
           }
         }
       }
@@ -747,15 +906,14 @@ function frame(now) {
   ctx.setTransform(RES, 0, 0, RES, 0, 0);
   ctx.drawImage(bg, 0, 0, W, H);
   drawWater();
-  drawWhirl();
+  drawWhirls();
   drawParts();
   drawBuoys();
-  if (state !== 'menu') for (const b of [...boats].reverse()) drawBoat(b);
+  if (state !== 'menu' && boats.length) for (const b of [...boats].reverse()) drawBoat(b);
   if (state === 'countdown') {
     const n = Math.ceil(countT - 0.6);
     drawCountdown(n >= 1 ? String(n) : 'GO!');
   }
-
 }
 
 function loop(now) {
@@ -768,7 +926,8 @@ requestAnimationFrame(loop);
 // dev hook: step the simulation without waiting on requestAnimationFrame
 window.__lanchas = {
   step: ms => frame(lastT + ms),
-  state: () => ({ state, raceTime, boats })
+  state: () => ({ state, raceTime, boats, track: T.def.id }),
+  selectTrack
 };
 
 })();
