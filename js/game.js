@@ -828,7 +828,9 @@ const net = {
   snaps: [],         // guest: recent snapshots [{rx, rt, b:[...]}]
   lastSnapSent: 0,
   lastInSent: 0,
-  lastIn: ''
+  lastIn: '',
+  halfRtt: 0.05,     // guest: smoothed one-way latency estimate
+  lastPing: 0
 };
 
 const ui = id => document.getElementById(id);
@@ -958,6 +960,8 @@ function onHostMsg(conn, m) {
       b.netIn.th = clamp(+m.th || 0, -1, 1);
       b.netIn.st = clamp(+m.st || 0, -1, 1);
     }
+  } else if (m.t === 'ping') {
+    netSend(conn, { t: 'pong', ts: m.ts });
   }
 }
 
@@ -1026,13 +1030,16 @@ function onGuestMsg(m) {
     resetRace();
   } else if (m.t === 'snap') {
     net.snaps.push({ rx: performance.now() / 1000, rt: m.rt, b: m.b });
-    if (net.snaps.length > 6) net.snaps.shift();
+    if (net.snaps.length > 8) net.snaps.shift();
+  } else if (m.t === 'pong') {
+    const rtt = performance.now() / 1000 - m.ts;
+    if (rtt >= 0 && rtt < 2) net.halfRtt = net.halfRtt * 0.7 + (rtt / 2) * 0.3;
   }
 }
 
 // ---- host: broadcast snapshots ----
 function hostSendSnap() {
-  if (perf - net.lastSnapSent < 0.066) return;
+  if (perf - net.lastSnapSent < 0.05) return;
   net.lastSnapSent = perf;
   netBroadcast({
     t: 'snap', rt: raceTime,
@@ -1045,40 +1052,96 @@ function hostSendSnap() {
   });
 }
 
-// ---- guest: interpolate snapshots, stream inputs ----
-function guestUpdate() {
+// ---- guest: predict own boat, interpolate the rest, stream inputs ----
+function guestUpdate(dt) {
+  if (!boats.length) return;
   const S = net.snaps;
-  if (!S.length || !boats.length) return;
-  const now = performance.now() / 1000 - 0.12;   // render slightly in the past
-  let s0 = S[0], s1 = S[S.length - 1];
-  for (let i = 0; i < S.length - 1; i++)
-    if (S[i].rx <= now && S[i + 1].rx >= now) { s0 = S[i]; s1 = S[i + 1]; break; }
-  if (now > s1.rx) s0 = s1;
-  const span = s1.rx - s0.rx;
-  const k = span > 0.001 ? clamp((now - s0.rx) / span, 0, 1) : 1;
-  boats.forEach((b, i) => {
-    const a0 = s0.b[i], a1 = s1.b[i];
-    if (!a0 || !a1) return;
-    b.x = a0[0] + (a1[0] - a0[0]) * k;
-    b.y = a0[1] + (a1[1] - a0[1]) * k;
-    b.a = wrapAng(a0[2] + wrapAng(a1[2] - a0[2]) * k);
-    b.vx = a1[3]; b.vy = a1[4];
-    b.prog = a1[5]; b.lapsDone = a1[6]; b.bestLap = a1[7];
-    b.finished = !!a1[8]; b.finishTime = a1[9];
-    wake(b);
-  });
-  raceTime = s1.rt;
-
-  // stream my controls to the host
   const me = boats[ME];
-  if (me && !me.finished && state === 'racing') {
-    const th = (keys['w'] || keys['ArrowUp']) ? 1 : (keys['s'] || keys['ArrowDown']) ? -1 : 0;
-    const st = ((keys['a'] || keys['ArrowLeft']) ? -1 : 0) + ((keys['d'] || keys['ArrowRight']) ? 1 : 0);
-    const packed = th + ':' + st;
-    if (packed !== net.lastIn || perf - net.lastInSent > 0.1) {
+
+  // latency probe for reconciliation extrapolation
+  if (perf - net.lastPing > 2) {
+    net.lastPing = perf;
+    netSend(net.conns[0], { t: 'ping', ts: performance.now() / 1000 });
+  }
+
+  // other boats: render slightly in the past, interpolated between snapshots
+  if (S.length) {
+    const now = performance.now() / 1000 - 0.10;
+    let s0 = S[0], s1 = S[S.length - 1];
+    for (let i = 0; i < S.length - 1; i++)
+      if (S[i].rx <= now && S[i + 1].rx >= now) { s0 = S[i]; s1 = S[i + 1]; break; }
+    if (now > s1.rx) s0 = s1;
+    const span = s1.rx - s0.rx;
+    const k = span > 0.001 ? clamp((now - s0.rx) / span, 0, 1) : 1;
+    boats.forEach((b, i) => {
+      const a0 = s0.b[i], a1 = s1.b[i];
+      if (!a0 || !a1) return;
+      // authoritative race bookkeeping for everyone, including me
+      b.prog = a1[5]; b.lapsDone = a1[6]; b.bestLap = a1[7];
+      b.finished = !!a1[8]; b.finishTime = a1[9];
+      if (i === ME) return;   // my hull is predicted locally below
+      b.x = a0[0] + (a1[0] - a0[0]) * k;
+      b.y = a0[1] + (a1[1] - a0[1]) * k;
+      b.a = wrapAng(a0[2] + wrapAng(a1[2] - a0[2]) * k);
+      b.vx = a1[3]; b.vy = a1[4];
+      wake(b);
+    });
+    raceTime = s1.rt;
+  }
+
+  // client-side prediction: run my own physics locally so controls feel instant
+  if (state === 'racing' && !me.finished) {
+    me.throttle = (keys['w'] || keys['ArrowUp']) ? 1 :
+                  (keys['s'] || keys['ArrowDown']) ? -1 : 0;
+    me.steer = ((keys['a'] || keys['ArrowLeft']) ? -1 : 0) +
+               ((keys['d'] || keys['ArrowRight']) ? 1 : 0);
+  } else {
+    me.throttle = 0; me.steer = 0;
+  }
+  stepBoat(me, dt);
+  wake(me);
+
+  // don't visibly overlap the interpolated boats (local-only nudge)
+  boats.forEach((o, i) => {
+    if (i === ME) return;
+    const dx = me.x - o.x, dy = me.y - o.y;
+    const d = Math.hypot(dx, dy);
+    if (d < HULL_R * 2 && d > 0.001) {
+      const nx = dx / d, ny = dy / d;
+      me.x = o.x + nx * HULL_R * 2;
+      me.y = o.y + ny * HULL_R * 2;
+      const vn = me.vx * nx + me.vy * ny;
+      if (vn < 0) { me.vx -= vn * 1.2 * nx; me.vy -= vn * 1.2 * ny; }
+    }
+  });
+
+  // reconcile: pull gently toward the host's authoritative position,
+  // extrapolated by snapshot age + one-way latency so we don't chase the past
+  if (S.length) {
+    const s1 = S[S.length - 1], a1 = s1.b[ME];
+    if (a1) {
+      const age = clamp(performance.now() / 1000 - s1.rx + net.halfRtt, 0, 0.4);
+      const ax = a1[0] + a1[3] * age, ay = a1[1] + a1[4] * age;
+      const ex = ax - me.x, ey = ay - me.y;
+      if (Math.hypot(ex, ey) > 80) {         // hard desync (e.g. big collision): snap
+        me.x = ax; me.y = ay;
+        me.a = a1[2]; me.vx = a1[3]; me.vy = a1[4];
+      } else {
+        const k2 = 1 - Math.exp(-3.5 * dt);
+        me.x += ex * k2;
+        me.y += ey * k2;
+        me.a = wrapAng(me.a + wrapAng(a1[2] - me.a) * k2 * 0.5);
+      }
+    }
+  }
+
+  // stream my controls to the host (instant on change, 20Hz keepalive)
+  if (!me.finished && state === 'racing') {
+    const packed = me.throttle + ':' + me.steer;
+    if (packed !== net.lastIn || perf - net.lastInSent > 0.05) {
       net.lastIn = packed;
       net.lastInSent = perf;
-      netSend(net.conns[0], { t: 'in', th, st });
+      netSend(net.conns[0], { t: 'in', th: me.throttle, st: me.steer });
     }
   }
 }
@@ -1195,7 +1258,7 @@ function frame(now) {
     const player = boats[ME];
 
     if (net.mode === 'guest') {
-      guestUpdate();       // boats come from host snapshots; inputs stream out
+      guestUpdate(dt);     // predict own boat, interpolate the rest
     } else {
       raceTime += dt;
       if (!player.finished && state === 'racing') {

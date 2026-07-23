@@ -21,10 +21,14 @@ Up to 4 players, each on their own computer:
 How it works: browsers connect directly to each other over WebRTC (PeerJS's
 free public broker handles the handshake — no game server involved). The
 host's browser simulates all boats; guests stream their throttle/steer inputs
-and render interpolated snapshots. If a guest drops mid-race, the AI takes
-their boat over; if the host drops, guests return to the menu. Note: the host
-should keep their tab visible — browsers throttle background tabs, which
-would freeze the race for everyone.
+(20 Hz) and receive 20 Hz snapshots. To keep controls feeling instant,
+guests run **client-side prediction**: their own boat's physics runs locally
+(walls, obstacles, whirlpools included) and is gently reconciled toward the
+host's authoritative position, extrapolated by measured latency — so only
+other boats carry the interpolation delay. If a guest drops mid-race, the AI
+takes their boat over; if the host drops, guests return to the menu. Note:
+the host should keep their tab visible — browsers throttle background tabs,
+which would freeze the race for everyone.
 
 ## Controls
 
