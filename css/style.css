@@ -1,0 +1,280 @@
+/* LANCHAS — Harbor Sprint
+   Palette: harbor navy #0A1B28 / panel #10293B / water #1F7FB5
+            sand #E8D5A3 / signal red #E2523E / buoy yellow #F5B841 / foam #EDF4F7 */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg: #0A1B28;
+  --panel: #10293B;
+  --panel-edge: #1B3B53;
+  --sand: #E8D5A3;
+  --red: #E2523E;
+  --red-dark: #B93A29;
+  --yellow: #F5B841;
+  --foam: #EDF4F7;
+  --dim: #7E97A8;
+  --display: "Bahnschrift", "Bahnschrift Condensed", "Arial Narrow", Arial, sans-serif;
+  --mono: Consolas, "Cascadia Mono", monospace;
+}
+
+body {
+  background:
+    radial-gradient(1200px 700px at 50% -10%, #123049 0%, var(--bg) 60%),
+    var(--bg);
+  color: var(--foam);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+
+.cabinet {
+  /* fill the viewport; cap width so the play field's aspect drives the size */
+  width: min(100%, calc((100vh - 250px) * 1.5625 + 24px));
+  height: 100%;
+  min-width: min(680px, 100%);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
+  overflow: hidden;
+}
+
+/* ---------- marquee ---------- */
+.marquee {
+  position: relative;
+  text-align: center;
+  padding: 14px 16px 10px;
+  background:
+    linear-gradient(180deg, #143550 0%, var(--panel) 100%);
+  border-bottom: 3px solid var(--red);
+}
+.marquee-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+}
+.marquee h1 {
+  font-family: var(--display);
+  font-size: clamp(34px, 6vw, 54px);
+  font-weight: 700;
+  letter-spacing: .32em;
+  margin-right: -.32em; /* balance the trailing letterspace */
+  color: var(--sand);
+  text-shadow: 0 3px 0 rgba(0, 0, 0, .35);
+}
+.flag { color: var(--red); font-size: clamp(20px, 3vw, 30px); }
+.flag.flip { transform: scaleX(-1); }
+.marquee-sub {
+  font-family: var(--display);
+  letter-spacing: .45em;
+  margin-right: -.45em;
+  font-size: 12px;
+  color: var(--dim);
+  margin-top: 6px;
+}
+.mute-btn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  background: transparent;
+  color: var(--dim);
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: .12em;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.mute-btn:hover { color: var(--foam); border-color: var(--dim); }
+
+/* ---------- HUD scoreboard ---------- */
+.hud {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--panel-edge);
+  border-bottom: 1px solid var(--panel-edge);
+}
+.hud-cell {
+  background: #0D2233;
+  text-align: center;
+  padding: 10px 6px 12px;
+}
+.hud-label {
+  display: block;
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: .3em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 3px;
+}
+.hud-value {
+  font-family: var(--mono);
+  font-size: 24px;
+  color: var(--sand);
+}
+#hud-pos { color: var(--yellow); }
+
+/* ---------- play field ---------- */
+.screen {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  background: #08141E;
+}
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* ---------- modals ---------- */
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 16, 24, .62);
+  backdrop-filter: blur(3px);
+  line-height: 1.5;
+  z-index: 10;
+}
+.overlay.hidden { display: none; }
+
+.modal {
+  width: min(440px, calc(100% - 40px));
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-top: 10px solid transparent;
+  border-image: repeating-linear-gradient(90deg,
+      var(--red) 0 26px, var(--foam) 26px 52px) 10;
+  border-radius: 10px;
+  padding: 26px 30px 30px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .6);
+  text-align: center;
+}
+.modal h2 {
+  font-family: var(--display);
+  font-size: 26px;
+  letter-spacing: .08em;
+  color: var(--sand);
+  margin-bottom: 10px;
+}
+.modal p { color: #B9CBD8; font-size: 15px; margin-bottom: 16px; }
+
+.rules {
+  list-style: none;
+  text-align: left;
+  margin: 0 auto 20px;
+  width: fit-content;
+  color: #B9CBD8;
+  font-size: 14px;
+}
+.rules li { padding: 3px 0; }
+.rules b { color: var(--foam); font-weight: 600; }
+
+.btn {
+  font-family: var(--display);
+  font-size: 16px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  background: var(--red);
+  color: var(--foam);
+  border: none;
+  border-radius: 8px;
+  padding: 12px 30px;
+  cursor: pointer;
+  box-shadow: 0 4px 0 var(--red-dark);
+}
+.btn:hover { filter: brightness(1.08); }
+.btn:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--red-dark); }
+.btn:focus-visible, .mute-btn:focus-visible {
+  outline: 3px solid var(--yellow);
+  outline-offset: 2px;
+}
+.btn-quiet {
+  background: transparent;
+  color: var(--dim);
+  border: 1px solid var(--panel-edge);
+  box-shadow: none;
+}
+.btn-quiet:hover { color: var(--foam); border-color: var(--dim); }
+.btn-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+
+/* ---------- results table ---------- */
+.results {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 22px;
+  font-size: 15px;
+}
+.results th {
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+  color: var(--dim);
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--panel-edge);
+  text-align: left;
+}
+.results td { padding: 7px 8px; border-bottom: 1px solid #14304527; text-align: left; }
+.results td:last-child { font-family: var(--mono); color: var(--sand); }
+.results tr.you td { color: var(--yellow); font-weight: 600; }
+.swatch {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border-radius: 4px;
+  vertical-align: -2px;
+}
+
+/* ---------- footer controls ---------- */
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  padding: 14px;
+  background: #0D2233;
+  border-top: 1px solid var(--panel-edge);
+}
+.chip {
+  color: var(--dim);
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+kbd {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--foam);
+  background: #16354C;
+  border: 1px solid #265170;
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 1px 7px;
+}
+
+@media (max-width: 560px) {
+  .hud-value { font-size: 17px; }
+  .marquee h1 { letter-spacing: .18em; margin-right: -.18em; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn:active { transform: none; }
+}
